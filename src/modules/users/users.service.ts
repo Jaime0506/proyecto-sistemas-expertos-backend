@@ -48,9 +48,30 @@ export class UsersService {
 				data: users,
 				status: HttpStatus.OK,
 			};
-		} catch {
+		} catch (error) {
+			console.error(error);
 			throw new InternalServerErrorException(
 				'Error al obtener los usuarios',
+			);
+		}
+	}
+
+	async findUsersWithRoles() {
+		try {
+			const users = await this.userRoleRepository.find({
+				where: { status: StatusEnum.ACTIVE },
+				relations: ['user', 'role'],
+			});
+
+			return {
+				message: 'Usuarios obtenidos correctamente',
+				data: users,
+				status: HttpStatus.OK,
+			};
+		} catch (error) {
+			console.error(error);
+			throw new InternalServerErrorException(
+				'Error al obtener los usuarios con roles',
 			);
 		}
 	}
@@ -67,7 +88,8 @@ export class UsersService {
 				data: user,
 				status: HttpStatus.OK,
 			};
-		} catch {
+		} catch (error) {
+			console.error(error);
 			throw new InternalServerErrorException(
 				'Error al obtener el usuario',
 			);
@@ -89,7 +111,8 @@ export class UsersService {
 				data: user,
 				status: HttpStatus.OK,
 			};
-		} catch {
+		} catch (error) {
+			console.error(error);
 			throw new InternalServerErrorException(
 				'Error al obtener el usuario',
 			);
@@ -130,11 +153,13 @@ export class UsersService {
 				data: user,
 				status: HttpStatus.CREATED,
 			};
-		} catch {
+		} catch (error) {
+			console.error(error);
 			throw new InternalServerErrorException('Error al crear el usuario');
 		}
 	}
 
+	// Este es el crear que usaran los administradores
 	async createUserByAdmin(createUserDto: CreateUserAdminDto) {
 		try {
 			return await processTransaction(
@@ -187,7 +212,8 @@ export class UsersService {
 					};
 				},
 			);
-		} catch {
+		} catch (error) {
+			console.error(error);
 			throw new InternalServerErrorException('Error al crear el usuario');
 		}
 	}
@@ -213,7 +239,8 @@ export class UsersService {
 				data: updatedUser,
 				status: HttpStatus.OK,
 			};
-		} catch {
+		} catch (error) {
+			console.error(error);
 			throw new InternalServerErrorException(
 				'Error al actualizar el usuario',
 			);
@@ -237,7 +264,8 @@ export class UsersService {
 				message: 'Usuario eliminado correctamente',
 				status: HttpStatus.OK,
 			};
-		} catch {
+		} catch (error) {
+			console.error(error);
 			throw new InternalServerErrorException(
 				'Error al eliminar el usuario',
 			);

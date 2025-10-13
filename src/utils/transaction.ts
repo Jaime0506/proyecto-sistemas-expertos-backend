@@ -25,6 +25,7 @@ export async function processTransaction<T>(
 		return result;
 	} catch (error) {
 		// Si hay error, hacer rollback
+		console.error(error);
 		await queryRunner.rollbackTransaction();
 		throw error;
 	} finally {

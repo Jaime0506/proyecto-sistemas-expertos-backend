@@ -145,6 +145,7 @@ export class AuthController {
 		try {
 			return await this.authService.register(dto);
 		} catch (error: any) {
+			console.error(error);
 			if ((error as { code?: string })?.code === '23505') {
 				// PostgreSQL unique constraint violation
 				throw new BadRequestException('El usuario ya existe');

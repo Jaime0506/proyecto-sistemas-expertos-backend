@@ -20,6 +20,11 @@ export class UsersController {
 		return this.usersService.findAllUsers();
 	}
 
+	@Get('get-all-with-roles')
+	findUsersWithRoles() {
+		return this.usersService.findUsersWithRoles();
+	}
+
 	@Get('get-by-id')
 	findUserById(@Param('id') id: number) {
 		return this.usersService.findUserById(id);
