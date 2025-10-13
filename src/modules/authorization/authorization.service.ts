@@ -352,14 +352,12 @@ export class AuthorizationService {
 		try {
 			const userRoles = await this.userRoleRepository.find({
 				where: { user_id, status: StatusEnum.ACTIVE },
-				relations: ['role'],
+				relations: ['role', 'user'],
 			});
-
-			const roles = userRoles.map((userRole) => userRole.role);
 
 			return {
 				message: 'Roles del usuario obtenidos correctamente',
-				data: roles,
+				data: userRoles,
 				status: HttpStatus.OK,
 			};
 		} catch {
@@ -431,6 +429,44 @@ export class AuthorizationService {
 		} catch {
 			throw new InternalServerErrorException(
 				'Error al verificar permiso del usuario',
+			);
+		}
+	}
+
+	// ==================== BASIC CRUD METHODS ====================
+
+	async getRoles() {
+		try {
+			const roles = await this.roleRepository.find({
+				where: { status: StatusEnum.ACTIVE },
+			});
+
+			return {
+				message: 'Roles obtenidos correctamente',
+				data: roles,
+				status: HttpStatus.OK,
+			};
+		} catch {
+			throw new InternalServerErrorException(
+				'Error al obtener roles',
+			);
+		}
+	}
+
+	async getPermissions() {
+		try {
+			const permissions = await this.permissionRepository.find({
+				where: { status: StatusEnum.ACTIVE },
+			});
+
+			return {
+				message: 'Permisos obtenidos correctamente',
+				data: permissions,
+				status: HttpStatus.OK,
+			};
+		} catch {
+			throw new InternalServerErrorException(
+				'Error al obtener permisos',
 			);
 		}
 	}

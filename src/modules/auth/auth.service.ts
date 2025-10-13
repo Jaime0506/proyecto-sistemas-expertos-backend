@@ -4,6 +4,7 @@ import {
 	UnauthorizedException,
 	BadRequestException,
 	InternalServerErrorException,
+	ConflictException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Repository, DataSource } from 'typeorm';
@@ -32,9 +33,25 @@ export class AuthService {
 		private usersService: UsersService,
 		private dataSource: DataSource,
 	) {
-		this.refreshTokenExpiresDays = Number(
-			this.configService.get<number>('JWT_REFRESH_TTL') || 7,
-		);
+		const refreshTtl = this.configService.get<string>('JWT_REFRESH_TTL');
+		
+		// Parsear el valor (puede ser '7d', '7', etc.)
+		if (refreshTtl && typeof refreshTtl === 'string') {
+			// Extraer solo el número si hay 'd' al final
+			const numericValue = refreshTtl.replace('d', '');
+			this.refreshTokenExpiresDays = Number(numericValue) || 7;
+		} else {
+			this.refreshTokenExpiresDays = 7;
+		}
+		
+		// Validar que el número sea válido
+		if (isNaN(this.refreshTokenExpiresDays) || this.refreshTokenExpiresDays <= 0) {
+			console.log('⚠️ JWT_REFRESH_TTL inválido, usando valor por defecto: 7 días');
+			this.refreshTokenExpiresDays = 7;
+		}
+		
+		console.log(`🔧 Refresh token expires in: ${this.refreshTokenExpiresDays} days`);
+		
 		this.refreshCookieName =
 			this.configService.get<string>('JWT_REFRESH_TOKEN_COOKIE_NAME') ||
 			'refresh_token';
@@ -45,15 +62,26 @@ export class AuthService {
 
 	// Validar credenciales
 	async validateUser(username: string, password: string) {
+		console.log('🔍 Validating user:', { username });
+		
 		const user = await this.usersService.findUserByUsername(username);
+		console.log('🔍 User found:', { userExists: !!user?.data, status: user?.status });
 
 		const userData = user?.data;
 
-		if (!userData) return null;
+		if (!userData) {
+			console.log('❌ User not found or data is null');
+			return null;
+		}
 
-		if (userData.status !== StatusEnum.ACTIVE) return null;
+		if (userData.status !== StatusEnum.ACTIVE) {
+			console.log('❌ User is not active:', { status: userData.status });
+			return null;
+		}
 
 		const match = await comparePassword(password, userData.password_hash);
+		console.log('🔍 Password match:', { match });
+		
 		if (!match) return null;
 		return userData;
 	}
@@ -142,11 +170,8 @@ export class AuthService {
 		// Generar nuevo refresh token (plain) y su hash
 		const newPlain = this.generateRefreshTokenPlain();
 		const newHash = this.hashRefreshToken(newPlain);
-		const refreshTokenExpiresDays = Number(
-			this.configService.get<number>('JWT_REFRESH_TTL') || 7,
-		);
 		const newExpiresAt = new Date(
-			Date.now() + refreshTokenExpiresDays * 24 * 60 * 60 * 1000,
+			Date.now() + this.refreshTokenExpiresDays * 24 * 60 * 60 * 1000,
 		);
 
 		// Usamos tu helper processTransaction para crear el nuevo token y actualizar el antiguo en una sola transacción
@@ -233,11 +258,18 @@ export class AuthService {
 	async register(user: CreateUserDto) {
 		try {
 			const result = await this.usersService.createUser(user);
-
 			return result;
-		} catch {
+		} catch (error) {
+			console.error('Error en registro:', error);
+			
+			// Si es un error de validación o conflicto, lo re-lanzamos
+			if (error instanceof ConflictException || error instanceof BadRequestException) {
+				throw error;
+			}
+			
+			// Para otros errores, lanzamos un error interno con más detalles
 			throw new InternalServerErrorException(
-				'Error al registrar el usuario',
+				`Error al registrar el usuario: ${error.message || 'Error desconocido'}`,
 			);
 		}
 	}

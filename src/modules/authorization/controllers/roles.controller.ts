@@ -3,6 +3,7 @@ import {
 	Post,
 	Put,
 	Delete,
+	Get,
 	Body,
 	Param,
 	ParseIntPipe,
@@ -18,6 +19,21 @@ import { UpdateRoleDto } from '../dtos/update-role.dto';
 @Controller('roles')
 export class RolesController {
 	constructor(private readonly authorizationService: AuthorizationService) {}
+
+	@Get()
+	@HttpCode(HttpStatus.OK)
+	@ApiOperation({ summary: 'Obtener todos los roles' })
+	@ApiResponse({
+		status: 200,
+		description: 'Roles obtenidos exitosamente',
+	})
+	@ApiResponse({
+		status: 500,
+		description: 'Error interno del servidor',
+	})
+	async getRoles() {
+		return await this.authorizationService.getRoles();
+	}
 
 	@Post()
 	@HttpCode(HttpStatus.CREATED)

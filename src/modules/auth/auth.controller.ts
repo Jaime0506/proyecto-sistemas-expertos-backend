@@ -9,13 +9,16 @@ import {
 	BadRequestException,
 } from '@nestjs/common';
 import type { Response, Request } from 'express';
+import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dtos/login.dto';
 import { RefreshDto } from './dtos/refresh.dto';
 import { ConfigService } from '@nestjs/config';
 import { UsersService } from '../users/users.service';
 import { CreateUserDto } from '../users/dtos/create-user.dto';
+import { AuthorizationService } from '../authorization/authorization.service';
 
+@ApiTags('Authentication')
 @Controller('auth')
 export class AuthController {
 	private cookieName: string;
@@ -26,6 +29,7 @@ export class AuthController {
 		private authService: AuthService,
 		private configService: ConfigService,
 		private usersService: UsersService,
+		private authorizationService: AuthorizationService,
 	) {
 		this.cookieName =
 			this.configService.get<string>('JWT_REFRESH_TOKEN_COOKIE_NAME') ||
@@ -43,14 +47,48 @@ export class AuthController {
 	}
 
 	@Post('login')
+	@ApiOperation({ summary: 'Iniciar sesión de usuario' })
+	@ApiResponse({
+		status: 200,
+		description: 'Login exitoso',
+		example: {
+			message: 'Login exitoso',
+			data: {
+				user: {
+					id: 1,
+					username: 'john_doe@example.com',
+					email: 'john_doe@example.com',
+					status: 'active',
+					created_at: '2024-01-01T00:00:00.000Z',
+					updated_at: '2024-01-01T00:00:00.000Z'
+				},
+				accessToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+				refreshToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+				expiresIn: '15m'
+			}
+		}
+	})
+	@ApiResponse({
+		status: 401,
+		description: 'Credenciales inválidas',
+		example: {
+			message: 'Invalid credentials',
+			statusCode: 401
+		}
+	})
 	async login(
 		@Body() dto: LoginDto,
 		@Res({ passthrough: true }) res: Response,
 	) {
+		console.log('🔐 Login attempt:', { username: dto.username });
+		
 		const user = await this.authService.validateUser(
 			dto.username,
 			dto.password,
 		);
+		
+		console.log('🔐 User validation result:', { userFound: !!user });
+		
 		if (!user) throw new UnauthorizedException('Invalid credentials');
 
 		const result = await this.authService.login(user);
@@ -60,17 +98,26 @@ export class AuthController {
 		} = result;
 
 		// set cookie HttpOnly with refresh token
+		const refreshTtl = this.configService.get<string>('JWT_REFRESH_TTL') || '7d';
+		// Parsear el valor (puede ser '7d', '7', etc.)
+		let refreshDays = 7;
+		if (refreshTtl && typeof refreshTtl === 'string') {
+			// Extraer solo el número si hay 'd' al final
+			const numericValue = refreshTtl.replace('d', '');
+			refreshDays = Number(numericValue) || 7;
+		}
+		
+		// Validar que el número sea válido
+		if (isNaN(refreshDays) || refreshDays <= 0) {
+			refreshDays = 7;
+		}
+		
 		res.cookie(this.cookieName, refreshToken, {
 			httpOnly: true,
 			secure: this.cookieSecure,
 			sameSite: this.sameSite,
 			path: '/',
-			maxAge:
-				Number(this.configService.get<number>('JWT_REFRESH_TTL') || 7) *
-				24 *
-				60 *
-				60 *
-				1000,
+			maxAge: refreshDays * 24 * 60 * 60 * 1000, // Convertir días a milisegundos
 		});
 
 		return result;
@@ -141,6 +188,33 @@ export class AuthController {
 	}
 
 	@Post('register')
+	@ApiOperation({ summary: 'Registrar nuevo usuario' })
+	@ApiResponse({
+		status: 201,
+		description: 'Usuario registrado exitosamente',
+		example: {
+			message: 'Usuario creado exitosamente',
+			data: {
+				user: {
+					id: 1,
+					username: 'john_doe@example.com',
+					email: 'john_doe@example.com',
+					status: 'active',
+					created_at: '2024-01-01T00:00:00.000Z',
+					updated_at: '2024-01-01T00:00:00.000Z'
+				}
+			}
+		}
+	})
+	@ApiResponse({
+		status: 400,
+		description: 'Datos de entrada inválidos',
+		example: {
+			message: 'Validation failed',
+			statusCode: 400,
+			error: 'Bad Request'
+		}
+	})
 	async register(@Body() dto: CreateUserDto) {
 		try {
 			return await this.authService.register(dto);
@@ -151,6 +225,24 @@ export class AuthController {
 				throw new BadRequestException('El usuario ya existe');
 			}
 			throw error;
+		}
+	}
+
+	@Post('check-roles')
+	@ApiOperation({ summary: 'Verificar roles disponibles (temporal)' })
+	async checkRoles() {
+		try {
+			// Usar el repositorio directamente para obtener roles
+			const roles = await this.authorizationService['roleRepository'].find();
+			return {
+				message: 'Roles disponibles',
+				data: roles,
+			};
+		} catch (error) {
+			return {
+				message: 'Error al obtener roles',
+				error: error.message,
+			};
 		}
 	}
 }

@@ -7,6 +7,14 @@ import * as cookieParser from 'cookie-parser';
 async function bootstrap() {
 	const app = await NestFactory.create(AppModule);
 
+	// Enable CORS
+	app.enableCors({
+		origin: ['http://localhost:5173', 'http://localhost:3000'],
+		methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+		allowedHeaders: ['Content-Type', 'Authorization'],
+		credentials: true,
+	});
+
 	// Set global prefix for all routes
 	app.setGlobalPrefix('api/v1');
 	app.useGlobalPipes(new ValidationPipe());

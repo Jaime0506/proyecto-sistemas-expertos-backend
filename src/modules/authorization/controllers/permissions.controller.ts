@@ -3,6 +3,7 @@ import {
 	Post,
 	Put,
 	Delete,
+	Get,
 	Body,
 	Param,
 	ParseIntPipe,
@@ -18,6 +19,21 @@ import { UpdatePermissionDto } from '../dtos/update-permission.dto';
 @Controller('permissions')
 export class PermissionsController {
 	constructor(private readonly authorizationService: AuthorizationService) {}
+
+	@Get()
+	@HttpCode(HttpStatus.OK)
+	@ApiOperation({ summary: 'Obtener todos los permisos' })
+	@ApiResponse({
+		status: 200,
+		description: 'Permisos obtenidos exitosamente',
+	})
+	@ApiResponse({
+		status: 500,
+		description: 'Error interno del servidor',
+	})
+async getAllPermissions() {
+		return await this.authorizationService.getAllPermissions();
+	}
 
 	@Post()
 	@HttpCode(HttpStatus.CREATED)

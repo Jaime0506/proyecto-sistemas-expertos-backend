@@ -12,6 +12,7 @@ import { CreateUserDto } from './dtos/create-user.dto';
 import { UpdateUserDto } from './dtos/update-user.dto';
 import { Role } from '../authorization/entities/role.entity';
 import { UserRole } from '../authorization/entities/user-role.entity';
+import { hashPassword } from '../../utils/password.utility';
 import { CreateUserAdminDto } from './dtos/create-user-admin.dto';
 import { processTransaction } from 'src/utils/transaction';
 
@@ -98,12 +99,20 @@ export class UsersService {
 
 	async findUserByUsername(username: string) {
 		try {
+			// Buscar por username o email
 			const user = await this.userRepository.findOne({
-				where: { username },
+				where: [
+					{ username },
+					{ email: username }
+				],
 			});
 
 			if (!user) {
-				throw new NotFoundException('Usuario no encontrado');
+				return {
+					message: 'Usuario no encontrado',
+					data: null,
+					status: HttpStatus.NOT_FOUND,
+				};
 			}
 
 			return {
@@ -112,7 +121,7 @@ export class UsersService {
 				status: HttpStatus.OK,
 			};
 		} catch (error) {
-			console.error(error);
+			console.error('Error en findUserByUsername:', error);
 			throw new InternalServerErrorException(
 				'Error al obtener el usuario',
 			);
@@ -134,7 +143,17 @@ export class UsersService {
 				throw new ConflictException('El username o email ya existe');
 			}
 
-			const user = await this.userRepository.save(createUserDto);
+			// Hashear la contraseña antes de guardar
+			const hashedPassword = await hashPassword(createUserDto.password);
+			
+			// Crear el objeto usuario con la contraseña hasheada
+			const userData = {
+				username: createUserDto.username,
+				email: createUserDto.email,
+				password_hash: hashedPassword,
+			};
+
+			const user = await this.userRepository.save(userData);
 
 			// Asigno el rol al usuario
 			const userRole = await this.userRoleRepository.save({
@@ -162,10 +181,12 @@ export class UsersService {
 	// Este es el crear que usaran los administradores
 	async createUserByAdmin(createUserDto: CreateUserAdminDto) {
 		try {
+			console.log('🔧 createUserByAdmin: Starting with data:', createUserDto);
 			return await processTransaction(
 				this.dataSource,
 				async (queryRunner) => {
 					const { role_id, ...userData } = createUserDto;
+					console.log('🔧 createUserByAdmin: Extracted data:', { role_id, userData });
 
 					// Validar que no existe el usuario
 					const userExists = await queryRunner.manager
@@ -194,16 +215,32 @@ export class UsersService {
 						throw new NotFoundException('Rol no encontrado');
 					}
 
+					// Hashear la contraseña antes de guardar
+					console.log('🔧 createUserByAdmin: Hashing password...');
+					const hashedPassword = await hashPassword(userData.password);
+					console.log('🔧 createUserByAdmin: Password hashed successfully');
+					
+					// Crear el objeto usuario sin el campo password
+					const { password, ...userWithoutPassword } = userData;
+					console.log('🔧 createUserByAdmin: User data without password:', userWithoutPassword);
+					
+					console.log('🔧 createUserByAdmin: Saving user...');
 					const user = await queryRunner.manager
 						.getRepository(User)
-						.save(userData);
+						.save({
+							...userWithoutPassword,
+							password_hash: hashedPassword,
+						});
+					console.log('🔧 createUserByAdmin: User saved successfully:', user);
 
+					console.log('🔧 createUserByAdmin: Creating user role...');
 					const userRole = await queryRunner.manager
 						.getRepository(UserRole)
 						.save({
 							user_id: user.id,
 							role_id: role_id,
 						});
+					console.log('🔧 createUserByAdmin: User role created successfully:', userRole);
 
 					return {
 						message: 'Usuario creado correctamente',
