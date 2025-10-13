@@ -7,6 +7,7 @@ import {
 	Req,
 	UnauthorizedException,
 	BadRequestException,
+	InternalServerErrorException,
 } from '@nestjs/common';
 import type { Response, Request } from 'express';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
@@ -60,35 +61,35 @@ export class AuthController {
 					email: 'john_doe@example.com',
 					status: 'active',
 					created_at: '2024-01-01T00:00:00.000Z',
-					updated_at: '2024-01-01T00:00:00.000Z'
+					updated_at: '2024-01-01T00:00:00.000Z',
 				},
 				accessToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
 				refreshToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
-				expiresIn: '15m'
-			}
-		}
+				expiresIn: '15m',
+			},
+		},
 	})
 	@ApiResponse({
 		status: 401,
 		description: 'Credenciales inválidas',
 		example: {
 			message: 'Invalid credentials',
-			statusCode: 401
-		}
+			statusCode: 401,
+		},
 	})
 	async login(
 		@Body() dto: LoginDto,
 		@Res({ passthrough: true }) res: Response,
 	) {
 		console.log('🔐 Login attempt:', { username: dto.username });
-		
+
 		const user = await this.authService.validateUser(
 			dto.username,
 			dto.password,
 		);
-		
+
 		console.log('🔐 User validation result:', { userFound: !!user });
-		
+
 		if (!user) throw new UnauthorizedException('Invalid credentials');
 
 		const result = await this.authService.login(user);
@@ -98,7 +99,8 @@ export class AuthController {
 		} = result;
 
 		// set cookie HttpOnly with refresh token
-		const refreshTtl = this.configService.get<string>('JWT_REFRESH_TTL') || '7d';
+		const refreshTtl =
+			this.configService.get<string>('JWT_REFRESH_TTL') || '7d';
 		// Parsear el valor (puede ser '7d', '7', etc.)
 		let refreshDays = 7;
 		if (refreshTtl && typeof refreshTtl === 'string') {
@@ -106,12 +108,12 @@ export class AuthController {
 			const numericValue = refreshTtl.replace('d', '');
 			refreshDays = Number(numericValue) || 7;
 		}
-		
+
 		// Validar que el número sea válido
 		if (isNaN(refreshDays) || refreshDays <= 0) {
 			refreshDays = 7;
 		}
-		
+
 		res.cookie(this.cookieName, refreshToken, {
 			httpOnly: true,
 			secure: this.cookieSecure,
@@ -201,10 +203,10 @@ export class AuthController {
 					email: 'john_doe@example.com',
 					status: 'active',
 					created_at: '2024-01-01T00:00:00.000Z',
-					updated_at: '2024-01-01T00:00:00.000Z'
-				}
-			}
-		}
+					updated_at: '2024-01-01T00:00:00.000Z',
+				},
+			},
+		},
 	})
 	@ApiResponse({
 		status: 400,
@@ -212,8 +214,8 @@ export class AuthController {
 		example: {
 			message: 'Validation failed',
 			statusCode: 400,
-			error: 'Bad Request'
-		}
+			error: 'Bad Request',
+		},
 	})
 	async register(@Body() dto: CreateUserDto) {
 		try {
@@ -233,16 +235,17 @@ export class AuthController {
 	async checkRoles() {
 		try {
 			// Usar el repositorio directamente para obtener roles
-			const roles = await this.authorizationService['roleRepository'].find();
+			const roles =
+				await this.authorizationService['roleRepository'].find();
 			return {
 				message: 'Roles disponibles',
 				data: roles,
 			};
 		} catch (error) {
-			return {
-				message: 'Error al obtener roles',
-				error: error.message,
-			};
+			console.error(error);
+			throw new InternalServerErrorException('Error al obtener roles', {
+				cause: error,
+			});
 		}
 	}
 }

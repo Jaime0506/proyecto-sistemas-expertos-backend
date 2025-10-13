@@ -34,7 +34,7 @@ export class AuthService {
 		private dataSource: DataSource,
 	) {
 		const refreshTtl = this.configService.get<string>('JWT_REFRESH_TTL');
-		
+
 		// Parsear el valor (puede ser '7d', '7', etc.)
 		if (refreshTtl && typeof refreshTtl === 'string') {
 			// Extraer solo el número si hay 'd' al final
@@ -43,15 +43,22 @@ export class AuthService {
 		} else {
 			this.refreshTokenExpiresDays = 7;
 		}
-		
+
 		// Validar que el número sea válido
-		if (isNaN(this.refreshTokenExpiresDays) || this.refreshTokenExpiresDays <= 0) {
-			console.log('⚠️ JWT_REFRESH_TTL inválido, usando valor por defecto: 7 días');
+		if (
+			isNaN(this.refreshTokenExpiresDays) ||
+			this.refreshTokenExpiresDays <= 0
+		) {
+			console.log(
+				'⚠️ JWT_REFRESH_TTL inválido, usando valor por defecto: 7 días',
+			);
 			this.refreshTokenExpiresDays = 7;
 		}
-		
-		console.log(`🔧 Refresh token expires in: ${this.refreshTokenExpiresDays} days`);
-		
+
+		console.log(
+			`🔧 Refresh token expires in: ${this.refreshTokenExpiresDays} days`,
+		);
+
 		this.refreshCookieName =
 			this.configService.get<string>('JWT_REFRESH_TOKEN_COOKIE_NAME') ||
 			'refresh_token';
@@ -63,9 +70,12 @@ export class AuthService {
 	// Validar credenciales
 	async validateUser(username: string, password: string) {
 		console.log('🔍 Validating user:', { username });
-		
+
 		const user = await this.usersService.findUserByUsername(username);
-		console.log('🔍 User found:', { userExists: !!user?.data, status: user?.status });
+		console.log('🔍 User found:', {
+			userExists: !!user?.data,
+			status: user?.status,
+		});
 
 		const userData = user?.data;
 
@@ -81,7 +91,7 @@ export class AuthService {
 
 		const match = await comparePassword(password, userData.password_hash);
 		console.log('🔍 Password match:', { match });
-		
+
 		if (!match) return null;
 		return userData;
 	}
@@ -261,15 +271,18 @@ export class AuthService {
 			return result;
 		} catch (error) {
 			console.error('Error en registro:', error);
-			
+
 			// Si es un error de validación o conflicto, lo re-lanzamos
-			if (error instanceof ConflictException || error instanceof BadRequestException) {
+			if (
+				error instanceof ConflictException ||
+				error instanceof BadRequestException
+			) {
 				throw error;
 			}
-			
+
 			// Para otros errores, lanzamos un error interno con más detalles
 			throw new InternalServerErrorException(
-				`Error al registrar el usuario: ${error.message || 'Error desconocido'}`,
+				`Error al registrar el usuario: ${error}}`,
 			);
 		}
 	}

@@ -11,7 +11,7 @@ type JwtPayload = {
 	username: string;
 };
 
-interface RequestUser {
+export interface RequestUser {
 	id: number;
 	username: string;
 	email: string;
