@@ -69,6 +69,28 @@ export class UsersService {
 		}
 	}
 
+	async findUserByUsername(username: string) {
+		try {
+			const user = await this.userRepository.findOne({
+				where: { username },
+			});
+
+			if (!user) {
+				throw new NotFoundException('Usuario no encontrado');
+			}
+
+			return {
+				message: 'Usuario obtenido correctamente',
+				data: user,
+				status: HttpStatus.OK,
+			};
+		} catch {
+			throw new InternalServerErrorException(
+				'Error al obtener el usuario',
+			);
+		}
+	}
+
 	// Este es el crear que usaran los admin
 	async createUser(createUserDto: CreateUserDto) {
 		try {
