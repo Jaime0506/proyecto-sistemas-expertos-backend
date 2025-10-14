@@ -10,7 +10,7 @@ import {
 	InternalServerErrorException,
 } from '@nestjs/common';
 import type { Response, Request } from 'express';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { ApiTags } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dtos/login.dto';
 import { RefreshDto } from './dtos/refresh.dto';
@@ -48,35 +48,6 @@ export class AuthController {
 	}
 
 	@Post('login')
-	@ApiOperation({ summary: 'Iniciar sesión de usuario' })
-	@ApiResponse({
-		status: 200,
-		description: 'Login exitoso',
-		example: {
-			message: 'Login exitoso',
-			data: {
-				user: {
-					id: 1,
-					username: 'john_doe@example.com',
-					email: 'john_doe@example.com',
-					status: 'active',
-					created_at: '2024-01-01T00:00:00.000Z',
-					updated_at: '2024-01-01T00:00:00.000Z',
-				},
-				accessToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
-				refreshToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
-				expiresIn: '15m',
-			},
-		},
-	})
-	@ApiResponse({
-		status: 401,
-		description: 'Credenciales inválidas',
-		example: {
-			message: 'Invalid credentials',
-			statusCode: 401,
-		},
-	})
 	async login(
 		@Body() dto: LoginDto,
 		@Res({ passthrough: true }) res: Response,
@@ -190,33 +161,6 @@ export class AuthController {
 	}
 
 	@Post('register')
-	@ApiOperation({ summary: 'Registrar nuevo usuario' })
-	@ApiResponse({
-		status: 201,
-		description: 'Usuario registrado exitosamente',
-		example: {
-			message: 'Usuario creado exitosamente',
-			data: {
-				user: {
-					id: 1,
-					username: 'john_doe@example.com',
-					email: 'john_doe@example.com',
-					status: 'active',
-					created_at: '2024-01-01T00:00:00.000Z',
-					updated_at: '2024-01-01T00:00:00.000Z',
-				},
-			},
-		},
-	})
-	@ApiResponse({
-		status: 400,
-		description: 'Datos de entrada inválidos',
-		example: {
-			message: 'Validation failed',
-			statusCode: 400,
-			error: 'Bad Request',
-		},
-	})
 	async register(@Body() dto: CreateUserDto) {
 		try {
 			return await this.authService.register(dto);
@@ -231,7 +175,6 @@ export class AuthController {
 	}
 
 	@Post('check-roles')
-	@ApiOperation({ summary: 'Verificar roles disponibles (temporal)' })
 	async checkRoles() {
 		try {
 			// Usar el repositorio directamente para obtener roles

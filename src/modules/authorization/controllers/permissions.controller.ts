@@ -31,8 +31,8 @@ export class PermissionsController {
 		status: 500,
 		description: 'Error interno del servidor',
 	})
-async getAllPermissions() {
-		return await this.authorizationService.getAllPermissions();
+	async getAllPermissions() {
+		return await this.authorizationService.getPermissions();
 	}
 
 	@Post()
@@ -54,6 +54,27 @@ async getAllPermissions() {
 		return await this.authorizationService.createPermission(
 			createPermissionDto,
 		);
+	}
+
+	// Obtener los permisos de un usuario
+	@Get('user/:userId')
+	@HttpCode(HttpStatus.OK)
+	@ApiOperation({ summary: 'Obtener los permisos de un usuario' })
+	@ApiParam({
+		name: 'userId',
+		description: 'ID del usuario',
+		type: 'number',
+	})
+	@ApiResponse({
+		status: 200,
+		description: 'Permisos del usuario obtenidos exitosamente',
+	})
+	@ApiResponse({
+		status: 500,
+		description: 'Error interno del servidor',
+	})
+	async getUserPermissions(@Param('userId', ParseIntPipe) userId: number) {
+		return await this.authorizationService.getUserPermissions(userId);
 	}
 
 	@Put()

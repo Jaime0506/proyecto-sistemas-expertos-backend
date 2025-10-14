@@ -19,6 +19,20 @@ import { UpdatePermissionDto } from './dtos/update-permission.dto';
 import { AssignRoleToUserDto } from './dtos/assign-role-to-user.dto';
 import { AssignPermissionToRoleDto } from './dtos/assign-permission-to-role.dto';
 import { CheckPermissionDto } from './dtos/check-permission.dto';
+import { CreateRoleWithPermissionsDto } from './dtos/create-role-with-permissions';
+import { processTransaction } from 'src/utils/transaction';
+import { UpdateRoleWithPermissionsDto } from './dtos/update-role-with-permissions.dto';
+
+export interface RoleWithPermissions {
+	id: number;
+	name: string;
+	description: string | null;
+	status: StatusEnum;
+	deleted_at: Date | null;
+	created_at: Date;
+	updated_at: Date;
+	permissions: Permission[];
+}
 
 @Injectable()
 export class AuthorizationService {
@@ -60,6 +74,69 @@ export class AuthorizationService {
 		}
 	}
 
+	// Crear rol con permisos
+	async createRoleWithPermissions(
+		createRoleDto: CreateRoleWithPermissionsDto,
+	) {
+		try {
+			return await processTransaction(
+				this.dataSource,
+				async (queryRunner) => {
+					const roleExists = await queryRunner.manager
+						.getRepository(Role)
+						.findOne({
+							where: { name: createRoleDto.name },
+						});
+
+					if (roleExists) {
+						throw new ConflictException(
+							'El nombre del rol ya existe',
+						);
+					}
+
+					const permissions = await queryRunner.manager
+						.getRepository(Permission)
+						.find({
+							where: { id: In(createRoleDto.permissions) },
+						});
+
+					if (
+						permissions.length !== createRoleDto.permissions.length
+					) {
+						throw new NotFoundException(
+							'Algunos permisos no encontrados',
+						);
+					}
+
+					const role = await queryRunner.manager
+						.getRepository(Role)
+						.save(createRoleDto);
+
+					const permissionsWithRole = permissions.map(
+						(permission) => ({
+							role_id: role.id,
+							permission_id: permission.id,
+						}),
+					);
+
+					await queryRunner.manager
+						.getRepository(RolePermission)
+						.save(permissionsWithRole);
+
+					return {
+						message: 'Rol creado correctamente, permisos asignados',
+						data: role,
+						status: HttpStatus.CREATED,
+					};
+				},
+			);
+		} catch {
+			throw new InternalServerErrorException(
+				'Error al crear el rol con permisos',
+			);
+		}
+	}
+
 	async updateRole(updateRoleDto: UpdateRoleDto) {
 		try {
 			const role = await this.roleRepository.findOne({
@@ -83,6 +160,52 @@ export class AuthorizationService {
 		} catch {
 			throw new InternalServerErrorException(
 				'Error al actualizar el rol',
+			);
+		}
+	}
+
+	async updateRoleWithPermissions(
+		updateRoleDto: UpdateRoleWithPermissionsDto,
+	) {
+		try {
+			const role = await this.roleRepository.findOne({
+				where: { id: updateRoleDto.id },
+			});
+
+			if (!role) {
+				throw new NotFoundException('Rol no encontrado');
+			}
+
+			const permissions = await this.permissionRepository.find({
+				where: { id: In(updateRoleDto.permissions) },
+			});
+
+			if (permissions.length !== updateRoleDto.permissions.length) {
+				throw new NotFoundException('Algunos permisos no encontrados');
+			}
+
+			// Primero eliminar todos los permisos existentes del rol
+			await this.rolePermissionRepository.delete({
+				role_id: updateRoleDto.id,
+			});
+
+			// Luego insertar los nuevos permisos
+			const permissionsWithRole = permissions.map((permission) => ({
+				role_id: updateRoleDto.id,
+				permission_id: permission.id,
+			}));
+
+			await this.rolePermissionRepository.save(permissionsWithRole);
+
+			return {
+				message: 'Rol actualizado correctamente, permisos actualizados',
+				data: role,
+				status: HttpStatus.OK,
+			};
+		} catch (error) {
+			console.error(error);
+			throw new InternalServerErrorException(
+				'Error al actualizar el rol con permisos',
 			);
 		}
 	}
@@ -447,17 +570,65 @@ export class AuthorizationService {
 				status: HttpStatus.OK,
 			};
 		} catch {
+			throw new InternalServerErrorException('Error al obtener roles');
+		}
+	}
+
+	async getAllRolesWithPermissions() {
+		try {
+			// Obtener todos los roles
+			const roles = await this.roleRepository.find();
+
+			// Obtener todas las relaciones rol-permiso
+			const rolePermissions = await this.rolePermissionRepository.find({
+				relations: ['permission'],
+			});
+
+			// Agrupar permisos por rol
+			const rolesMap = new Map<number, RoleWithPermissions>();
+
+			// Inicializar todos los roles
+			roles.forEach((role) => {
+				rolesMap.set(role.id, {
+					id: role.id,
+					name: role.name,
+					description: role.description,
+					status: role.status,
+					deleted_at: role.deleted_at,
+					created_at: role.created_at,
+					updated_at: role.updated_at,
+					permissions: [],
+				});
+			});
+
+			// Agregar permisos a cada rol
+			rolePermissions.forEach((rolePermission) => {
+				const roleId = rolePermission.role_id;
+				const roleData = rolesMap.get(roleId);
+				if (roleData) {
+					roleData.permissions.push(rolePermission.permission);
+				}
+			});
+
+			// Convertir Map a array
+			const rolesWithPermissions = Array.from(rolesMap.values());
+
+			return {
+				message: 'Roles con permisos obtenidos correctamente',
+				data: rolesWithPermissions,
+				status: HttpStatus.OK,
+			};
+		} catch (error) {
+			console.error(error);
 			throw new InternalServerErrorException(
-				'Error al obtener roles',
+				'Error al obtener roles con permisos',
 			);
 		}
 	}
 
 	async getPermissions() {
 		try {
-			const permissions = await this.permissionRepository.find({
-				where: { status: StatusEnum.ACTIVE },
-			});
+			const permissions = await this.permissionRepository.find();
 
 			return {
 				message: 'Permisos obtenidos correctamente',
@@ -465,8 +636,49 @@ export class AuthorizationService {
 				status: HttpStatus.OK,
 			};
 		} catch {
+			throw new InternalServerErrorException('Error al obtener permisos');
+		}
+	}
+
+	async getUserPermissions(userId: number) {
+		try {
+			// Obtengo los roles del usuario actual
+			const userRoles = await this.userRoleRepository.find({
+				where: { user_id: userId, status: StatusEnum.ACTIVE },
+				relations: ['role'],
+			});
+
+			if (userRoles.length === 0) {
+				return {
+					message: 'Usuario sin permisos',
+					data: { permissions: [] },
+					status: HttpStatus.OK,
+				};
+			}
+
+			// Obtengo los permisos de los roles del usuario actual
+			const roleIds = userRoles.map((userRole) => userRole.role_id);
+			const userPermissions = await this.rolePermissionRepository.find({
+				where: { role_id: In(roleIds), status: StatusEnum.ACTIVE },
+				relations: ['permission'],
+			});
+
+			const permissions = userPermissions.map(
+				(userPermission) => userPermission.permission,
+			);
+
+			const permissionsNames = permissions.map(
+				(permission) => permission.name,
+			);
+
+			return {
+				message: 'Permisos del usuario obtenidos correctamente',
+				data: permissionsNames,
+				status: HttpStatus.OK,
+			};
+		} catch {
 			throw new InternalServerErrorException(
-				'Error al obtener permisos',
+				'Error al obtener permisos del usuario',
 			);
 		}
 	}

@@ -14,6 +14,8 @@ import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { AuthorizationService } from '../authorization.service';
 import { CreateRoleDto } from '../dtos/create-role.dto';
 import { UpdateRoleDto } from '../dtos/update-role.dto';
+import { CreateRoleWithPermissionsDto } from '../dtos/create-role-with-permissions';
+import { UpdateRoleWithPermissionsDto } from '../dtos/update-role-with-permissions.dto';
 
 @ApiTags('Roles')
 @Controller('roles')
@@ -35,6 +37,41 @@ export class RolesController {
 		return await this.authorizationService.getRoles();
 	}
 
+	@Get('all-with-permissions')
+	@HttpCode(HttpStatus.OK)
+	@ApiOperation({ summary: 'Obtener todos los roles con sus permisos' })
+	@ApiResponse({
+		status: 200,
+		description: 'Roles con permisos obtenidos exitosamente',
+	})
+	@ApiResponse({
+		status: 500,
+		description: 'Error interno del servidor',
+	})
+	async getRolesWithPermissions() {
+		return await this.authorizationService.getAllRolesWithPermissions();
+	}
+
+	@Get('user/:userId')
+	@HttpCode(HttpStatus.OK)
+	@ApiOperation({ summary: 'Obtener los roles de un usuario' })
+	@ApiParam({
+		name: 'userId',
+		description: 'ID del usuario',
+		type: 'number',
+	})
+	@ApiResponse({
+		status: 200,
+		description: 'Roles del usuario obtenidos exitosamente',
+	})
+	@ApiResponse({
+		status: 500,
+		description: 'Error interno del servidor',
+	})
+	async getUserRoles(@Param('userId', ParseIntPipe) userId: number) {
+		return await this.authorizationService.getUserRoles(userId);
+	}
+
 	@Post()
 	@HttpCode(HttpStatus.CREATED)
 	@ApiOperation({ summary: 'Crear un nuevo rol' })
@@ -54,6 +91,25 @@ export class RolesController {
 		return await this.authorizationService.createRole(createRoleDto);
 	}
 
+	@Post('create-with-permissions')
+	@HttpCode(HttpStatus.CREATED)
+	@ApiOperation({ summary: 'Crear un nuevo rol con permisos' })
+	@ApiResponse({
+		status: 201,
+		description: 'Rol creado exitosamente',
+	})
+	@ApiResponse({
+		status: 500,
+		description: 'Error interno del servidor',
+	})
+	async createRoleWithPermissions(
+		@Body() createRoleDto: CreateRoleWithPermissionsDto,
+	) {
+		return await this.authorizationService.createRoleWithPermissions(
+			createRoleDto,
+		);
+	}
+
 	@Put()
 	@HttpCode(HttpStatus.OK)
 	@ApiOperation({ summary: 'Actualizar un rol existente' })
@@ -71,6 +127,25 @@ export class RolesController {
 	})
 	async updateRole(@Body() updateRoleDto: UpdateRoleDto) {
 		return await this.authorizationService.updateRole(updateRoleDto);
+	}
+
+	@Put('update-with-permissions')
+	@HttpCode(HttpStatus.OK)
+	@ApiOperation({ summary: 'Actualizar un rol existente con permisos' })
+	@ApiResponse({
+		status: 200,
+		description: 'Rol actualizado exitosamente',
+	})
+	@ApiResponse({
+		status: 500,
+		description: 'Error interno del servidor',
+	})
+	async updateRoleWithPermissions(
+		@Body() updateRoleDto: UpdateRoleWithPermissionsDto,
+	) {
+		return await this.authorizationService.updateRoleWithPermissions(
+			updateRoleDto,
+		);
 	}
 
 	@Delete(':id')
