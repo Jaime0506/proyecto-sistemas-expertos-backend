@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, OneToMany } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
 
 @Entity({ name: 'facts', schema: 'sys' })
 export class Fact {
@@ -10,10 +10,4 @@ export class Fact {
 
 	@Column({ type: 'text' })
 	description: string;
-
-	@OneToMany('OptionFact', 'fact')
-	optionFacts?: any[];
-
-	@OneToMany('RuleFact', 'fact')
-	ruleFacts?: any[];
 }

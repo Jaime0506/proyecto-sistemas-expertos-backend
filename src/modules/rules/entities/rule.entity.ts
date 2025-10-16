@@ -2,8 +2,6 @@ import {
 	Entity,
 	PrimaryGeneratedColumn,
 	Column,
-	ManyToOne,
-	OneToMany,
 } from 'typeorm';
 
 @Entity({ name: 'rules', schema: 'sys' })
@@ -14,9 +12,6 @@ export class Rule {
 	@Column({ nullable: true })
 	name?: string;
 
-	@ManyToOne('Failure', 'rules', { onDelete: 'CASCADE' })
-	failure: any;
-
 	@Column()
 	failure_id: number;
 
@@ -25,7 +20,4 @@ export class Rule {
 
 	@Column({ type: 'text', nullable: true })
 	description?: string;
-
-	@OneToMany('RuleFact', 'rule')
-	ruleFacts?: any[];
 }

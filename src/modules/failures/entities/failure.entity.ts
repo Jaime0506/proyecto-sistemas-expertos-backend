@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, OneToMany } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
 
 @Entity({ name: 'failures', schema: 'sys' })
 export class Failure {
@@ -10,7 +10,4 @@ export class Failure {
 
 	@Column({ type: 'text', nullable: true })
 	description?: string;
-
-	@OneToMany('Rule', 'failure')
-	rules?: any[];
 }
