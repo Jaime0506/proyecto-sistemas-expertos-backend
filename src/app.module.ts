@@ -10,6 +10,8 @@ import { FactsModule } from './modules/facts/facts.module';
 import { RulesModule } from './modules/rules/rules.module';
 import { RuleFactModule } from './modules/rule-fact/rule-fact.module';
 import { FactsFailureModule } from './modules/facts-failure/facts-failure.module';
+import { SystemSetupModule } from './modules/system-setup/system-setup.module';
+import { InferenceEngineModule } from './modules/inference-engine/inference-engine.module';
 
 @Module({
 	imports: [
@@ -23,6 +25,8 @@ import { FactsFailureModule } from './modules/facts-failure/facts-failure.module
 		RulesModule,
 		RuleFactModule,
 		FactsFailureModule,
+		SystemSetupModule,
+		InferenceEngineModule,
 	],
 })
 export class AppModule {}
