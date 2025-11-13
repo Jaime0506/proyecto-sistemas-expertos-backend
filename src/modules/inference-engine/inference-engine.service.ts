@@ -264,8 +264,18 @@ export class InferenceEngineService {
     }
 
     // Si es riesgo alto sin productos, condicionado
-    if (riskProfile === 'ALTO') {
+    if (riskProfile === 'RIESGO_ALTO' || riskProfile === 'ALTO') {
       return 'CONDICIONADO';
+    }
+
+    // Si es riesgo medio sin productos, aprobar condicionado
+    if (riskProfile === 'RIESGO_MEDIO' || riskProfile === 'MEDIO') {
+      return 'APROBADO';
+    }
+
+    // Si es riesgo bajo sin productos, aprobar
+    if (riskProfile === 'RIESGO_BAJO' || riskProfile === 'BAJO') {
+      return 'APROBADO';
     }
 
     // Caso por defecto: pendiente revisión manual

@@ -21,6 +21,8 @@ export interface RuleDefinition {
   failure_detected?: string;
   success_action?: string;
   description: string;
+  invert_logic?: boolean; // Si es true, la regla falla cuando los facts están presentes
+  use_or_logic?: boolean; // Si es true, la regla pasa si AL MENOS UNA condición se cumple (OR), en lugar de todas (AND)
 }
 
 @Injectable()
@@ -232,6 +234,7 @@ export class ForwardChainingService {
       },
 
       // REGLAS DE VALIDACIÓN NORMATIVA (R040-R042)
+      // Estas reglas generan failures cuando los facts problemáticos están presentes
       {
         code: 'R040',
         name: 'Validación SARLAFT',
@@ -241,7 +244,9 @@ export class ForwardChainingService {
           { fact_code: 'FACT_ACTIVIDAD_ALTO_RIESGO_SARLAFT', operator: 'equals', value: true, required: true }
         ],
         failure_detected: 'FALLA_ACTIVIDAD_ALTO_RIESGO_SARLAFT',
-        description: 'Validar actividades de alto riesgo SARLAFT'
+        description: 'Validar actividades de alto riesgo SARLAFT',
+        // Esta regla falla cuando el fact está presente (invertir lógica)
+        invert_logic: true
       },
       {
         code: 'R041',
@@ -250,10 +255,12 @@ export class ForwardChainingService {
         priority: 41,
         conditions: [
           { fact_code: 'FACT_PERSONA_PEP', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_APROBACION_COMITE_PEP', operator: 'equals', value: false, required: true }
+          { fact_code: 'FACT_APROBACION_COMITE_PEP', operator: 'not_equals', value: true, required: false }
         ],
         failure_detected: 'FALLA_PERSONA_PEP_SIN_APROBACION',
-        description: 'Validar personas políticamente expuestas'
+        description: 'Validar personas políticamente expuestas',
+        // Esta regla falla cuando PEP está presente pero sin aprobación
+        invert_logic: true
       },
       {
         code: 'R042',
@@ -264,7 +271,9 @@ export class ForwardChainingService {
           { fact_code: 'FACT_MULTIPLES_CONSULTAS', operator: 'equals', value: true, required: true }
         ],
         failure_detected: 'FALLA_MULTIPLES_CONSULTAS',
-        description: 'Detectar múltiples consultas simultáneas'
+        description: 'Detectar múltiples consultas simultáneas',
+        // Esta regla falla cuando el fact está presente (invertir lógica)
+        invert_logic: true
       },
 
       // REGLAS DE CONDICIONES ESPECIALES (R050-R052)
@@ -349,14 +358,16 @@ export class ForwardChainingService {
       },
 
       // REGLAS DE VALIDACIÓN ADICIONAL (R043-R048)
+      // Estas reglas solo se ejecutan si los facts requeridos están presentes
+      // Si no hay datos para evaluarlas, no generan failures
       {
         code: 'R043',
         name: 'Validación de Documentos',
         category: 'VALIDACION',
         priority: 43,
         conditions: [
-          { fact_code: 'FACT_DOCUMENTOS_COMPLETOS', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_DOCUMENTOS_VALIDOS', operator: 'equals', value: true, required: true }
+          { fact_code: 'FACT_DOCUMENTOS_COMPLETOS', operator: 'equals', value: true, required: false },
+          { fact_code: 'FACT_DOCUMENTOS_VALIDOS', operator: 'equals', value: true, required: false }
         ],
         failure_detected: 'FALLA_DOCUMENTOS_INCOMPLETOS',
         description: 'Validar completitud y validez de documentos'
@@ -367,8 +378,8 @@ export class ForwardChainingService {
         category: 'VALIDACION',
         priority: 44,
         conditions: [
-          { fact_code: 'FACT_REFERENCIAS_VERIFICADAS', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_REFERENCIAS_POSITIVAS', operator: 'equals', value: true, required: true }
+          { fact_code: 'FACT_REFERENCIAS_VERIFICADAS', operator: 'equals', value: true, required: false },
+          { fact_code: 'FACT_REFERENCIAS_POSITIVAS', operator: 'equals', value: true, required: false }
         ],
         failure_detected: 'FALLA_REFERENCIAS_NEGATIVAS',
         description: 'Validar referencias personales y comerciales'
@@ -379,8 +390,8 @@ export class ForwardChainingService {
         category: 'VALIDACION',
         priority: 45,
         conditions: [
-          { fact_code: 'FACT_GARANTIAS_SUFICIENTES', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_GARANTIAS_AVALUADAS', operator: 'equals', value: true, required: true }
+          { fact_code: 'FACT_GARANTIAS_SUFICIENTES', operator: 'equals', value: true, required: false },
+          { fact_code: 'FACT_GARANTIAS_AVALUADAS', operator: 'equals', value: true, required: false }
         ],
         failure_detected: 'FALLA_GARANTIAS_INSUFICIENTES',
         description: 'Validar suficiencia y avalúo de garantías'
@@ -391,8 +402,8 @@ export class ForwardChainingService {
         category: 'VALIDACION',
         priority: 46,
         conditions: [
-          { fact_code: 'FACT_HISTORIAL_CREDITICIO_POSITIVO', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_CUMPLIMIENTO_PAGOS', operator: 'equals', value: true, required: true }
+          { fact_code: 'FACT_HISTORIAL_CREDITICIO_POSITIVO', operator: 'equals', value: true, required: false },
+          { fact_code: 'FACT_CUMPLIMIENTO_PAGOS', operator: 'equals', value: true, required: false }
         ],
         failure_detected: 'FALLA_HISTORIAL_CREDITICIO_NEGATIVO',
         description: 'Validar historial crediticio y cumplimiento de pagos'
@@ -403,8 +414,8 @@ export class ForwardChainingService {
         category: 'VALIDACION',
         priority: 47,
         conditions: [
-          { fact_code: 'FACT_CAPACIDAD_PAGO_DEMOSTRADA', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_MARGEN_PAGO_SUFICIENTE', operator: 'equals', value: true, required: true }
+          { fact_code: 'FACT_CAPACIDAD_PAGO_DEMOSTRADA', operator: 'equals', value: true, required: false },
+          { fact_code: 'FACT_MARGEN_PAGO_SUFICIENTE', operator: 'equals', value: true, required: false }
         ],
         failure_detected: 'FALLA_CAPACIDAD_PAGO_INSUFICIENTE',
         description: 'Validar capacidad de pago del solicitante'
@@ -415,11 +426,13 @@ export class ForwardChainingService {
         category: 'VALIDACION',
         priority: 48,
         conditions: [
-          { fact_code: 'FACT_ESTABILIDAD_LABORAL', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_ANTIGUEDAD_LABORAL_MINIMA', operator: 'equals', value: true, required: true }
+          { fact_code: 'FACT_ESTABILIDAD_LABORAL', operator: 'equals', value: true, required: false },
+          { fact_code: 'FACT_ANTIGUEDAD_LABORAL_MINIMA', operator: 'equals', value: true, required: false }
         ],
         failure_detected: 'FALLA_ESTABILIDAD_LABORAL_INSUFICIENTE',
-        description: 'Validar estabilidad y antigüedad laboral'
+        description: 'Validar estabilidad y antigüedad laboral',
+        // Esta regla pasa si AL MENOS UNA condición se cumple (lógica OR)
+        use_or_logic: true
       },
 
       // REGLAS DE EXPLICABILIDAD (R060-R061)
@@ -456,6 +469,7 @@ export class ForwardChainingService {
     const startTime = Date.now();
 
     console.log('🔄 Convirtiendo datos de entrada a facts...');
+    console.log('📥 Datos recibidos:', JSON.stringify(inputData, null, 2));
 
     // Mapeo de datos de entrada a facts
     const factMappings = {
@@ -508,8 +522,13 @@ export class ForwardChainingService {
       },
 
       // Endeudamiento
+      // Acepta tanto porcentajes (0-100) como decimales (0-1)
       debt_to_income_ratio: (ratio: number) => {
-        if (ratio <= 0.50) {
+        // Si el valor es mayor a 1, asumimos que es un porcentaje (0-100)
+        // Si es menor o igual a 1, asumimos que es un decimal (0-1)
+        const normalizedRatio = ratio > 1 ? ratio / 100 : ratio;
+        
+        if (normalizedRatio <= 0.50) {
           facts.push('FACT_ENDEUDAMIENTO_MAX_50');
         } else {
           facts.push('FACT_ENDEUDAMIENTO_EXCESIVO');
@@ -557,11 +576,16 @@ export class ForwardChainingService {
       },
 
       // Cuota proyectada vs ingresos
+      // Acepta tanto porcentajes (0-100) como decimales (0-1)
       payment_to_income_ratio: (ratio: number) => {
-        if (ratio <= 0.30) {
+        // Si el valor es mayor a 1, asumimos que es un porcentaje (0-100)
+        // Si es menor o igual a 1, asumimos que es un decimal (0-1)
+        const normalizedRatio = ratio > 1 ? ratio / 100 : ratio;
+        
+        if (normalizedRatio <= 0.30) {
           facts.push('FACT_CUOTA_MAX_30_INGRESOS');
         }
-        if (ratio <= 0.40) {
+        if (normalizedRatio <= 0.40) {
           facts.push('FACT_CUOTA_MAX_40_INGRESOS');
         }
       },
@@ -674,13 +698,59 @@ export class ForwardChainingService {
       }
     };
 
+    // Campos requeridos que siempre deben procesarse
+    const requiredFields = ['age', 'monthly_income', 'credit_score', 'employment_status', 'credit_purpose', 'requested_amount'];
+    
+    // Campos opcionales que solo se procesan si tienen un valor válido
+    const optionalFields = [
+      'debt_to_income_ratio', 'max_days_delinquency', 'employment_tenure_months',
+      'payment_to_income_ratio', 'down_payment_percentage', 'co_borrower_income',
+      'is_microenterprise', 'economic_activity', 'is_pep', 'pep_committee_approval',
+      'recent_inquiries', 'customer_tenure_months', 'historical_compliance',
+      'is_convention_employee', 'payroll_discount_authorized', 'employment_type',
+      'pension_amount', 'is_legal_pension', 'has_co_borrower'
+    ];
+
     // Aplicar mapeos
     for (const [key, mapper] of Object.entries(factMappings)) {
-      if (inputData[key] !== undefined && inputData[key] !== null) {
-        try {
-          (mapper as Function)(inputData[key]);
-        } catch (error) {
-          console.warn(`⚠️ Error mapeando ${key}:`, error);
+      const value = inputData[key];
+      
+      // Campos requeridos: siempre procesar si están definidos
+      if (requiredFields.includes(key)) {
+        if (value !== undefined && value !== null) {
+          try {
+            console.log(`  🔍 Procesando campo requerido ${key}:`, value);
+            (mapper as Function)(value);
+          } catch (error) {
+            console.warn(`⚠️ Error mapeando ${key}:`, error);
+          }
+        } else {
+          console.warn(`⚠️ Campo requerido ${key} no está definido`);
+        }
+      } 
+      // Campos opcionales: solo procesar si tienen un valor válido
+      else if (optionalFields.includes(key)) {
+        if (value !== undefined && value !== null) {
+          // Para números opcionales, procesar incluso si es 0 (puede ser válido)
+          // Para strings, ignorar strings vacíos
+          // Para booleanos, procesar siempre
+          const shouldProcess = 
+            typeof value === 'boolean' || 
+            typeof value === 'number' ||
+            (typeof value === 'string' && value.trim() !== '');
+          
+          if (shouldProcess) {
+            try {
+              console.log(`  🔍 Procesando campo opcional ${key}:`, value);
+              (mapper as Function)(value);
+            } catch (error) {
+              console.warn(`⚠️ Error mapeando ${key}:`, error);
+            }
+          } else {
+            console.log(`  ⏭️  Omitiendo ${key} (string vacío):`, value);
+          }
+        } else {
+          console.log(`  ⏭️  Omitiendo ${key} (undefined o null)`);
         }
       }
     }
@@ -704,34 +774,150 @@ export class ForwardChainingService {
   }> {
     const startTime = Date.now();
 
-    // Verificar si todas las condiciones requeridas se cumplen
+    // Separar condiciones requeridas y opcionales
     const requiredConditions = rule.conditions.filter(c => c.required);
-    const metConditions = requiredConditions.filter(condition => {
-      return availableFacts.includes(condition.fact_code);
-    });
+    const optionalConditions = rule.conditions.filter(c => !c.required);
 
-    const allRequiredMet = metConditions.length === requiredConditions.length;
-    const executionTime = Date.now() - startTime;
+    // Si hay condiciones requeridas, todas deben cumplirse
+    if (requiredConditions.length > 0) {
+      const metRequiredConditions = requiredConditions.filter(condition => {
+        const factPresent = availableFacts.includes(condition.fact_code);
+        // Manejar operadores not_equals
+        if (condition.operator === 'not_equals') {
+          return !factPresent; // Si el fact NO está presente, la condición se cumple
+        }
+        return factPresent;
+      });
 
-    if (allRequiredMet) {
-      return {
-        applied: true,
-        result: 'PASS',
-        explanation: `Regla ${rule.code} aplicada: ${rule.description}`,
-        executionTime
-      };
-    } else {
-      const missingFacts = requiredConditions
-        .filter(c => !availableFacts.includes(c.fact_code))
-        .map(c => c.fact_code);
-      
-      return {
-        applied: false,
-        result: 'FAIL',
-        explanation: `Regla ${rule.code} no aplicada: Faltan facts requeridos: ${missingFacts.join(', ')}`,
-        executionTime
-      };
+      const allRequiredMet = metRequiredConditions.length === requiredConditions.length;
+      const executionTime = Date.now() - startTime;
+
+      // Si la regla tiene invert_logic, invertir el resultado
+      if (rule.invert_logic) {
+        if (allRequiredMet) {
+          return {
+            applied: true,
+            result: 'FAIL', // Invertido: si los facts están presentes, falla
+            explanation: `Regla ${rule.code} detectó condición problemática: ${rule.description}`,
+            executionTime
+          };
+        } else {
+          return {
+            applied: false,
+            result: 'PASS', // Invertido: si los facts NO están presentes, pasa
+            explanation: `Regla ${rule.code} no aplicable: Condiciones problemáticas no presentes`,
+            executionTime
+          };
+        }
+      }
+
+      // Lógica normal
+      if (allRequiredMet) {
+        return {
+          applied: true,
+          result: 'PASS',
+          explanation: `Regla ${rule.code} aplicada: ${rule.description}`,
+          executionTime
+        };
+      } else {
+        const missingFacts = requiredConditions
+          .filter(c => {
+            const factPresent = availableFacts.includes(c.fact_code);
+            if (c.operator === 'not_equals') {
+              return factPresent; // Si está presente cuando no debería, es un problema
+            }
+            return !factPresent;
+          })
+          .map(c => c.fact_code);
+        
+        return {
+          applied: false,
+          result: 'FAIL',
+          explanation: `Regla ${rule.code} no aplicada: Faltan facts requeridos: ${missingFacts.join(', ')}`,
+          executionTime
+        };
+      }
     }
+    
+    // Si solo hay condiciones opcionales, solo evaluar si al menos una está presente
+    if (optionalConditions.length > 0) {
+      const presentOptionalConditions = optionalConditions.filter(condition => {
+        const factPresent = availableFacts.includes(condition.fact_code);
+        // Manejar operadores not_equals
+        if (condition.operator === 'not_equals') {
+          return !factPresent; // Si el fact NO está presente, la condición se cumple
+        }
+        return factPresent;
+      });
+
+      // Si ninguna condición opcional está presente, la regla no se aplica
+      if (presentOptionalConditions.length === 0) {
+        return {
+          applied: false,
+          result: 'NOT_APPLICABLE',
+          explanation: `Regla ${rule.code} no aplicable: No hay facts relacionados presentes`,
+          executionTime: Date.now() - startTime
+        };
+      }
+
+      const executionTime = Date.now() - startTime;
+
+      // Si la regla usa lógica OR, pasa si AL MENOS UNA condición se cumple
+      if (rule.use_or_logic) {
+        if (presentOptionalConditions.length > 0) {
+          return {
+            applied: true,
+            result: 'PASS',
+            explanation: `Regla ${rule.code} aplicada: ${rule.description} (al menos una condición cumplida)`,
+            executionTime
+          };
+        } else {
+          return {
+            applied: false,
+            result: 'FAIL',
+            explanation: `Regla ${rule.code} no aplicada: Ninguna condición se cumple`,
+            executionTime
+          };
+        }
+      }
+
+      // Lógica AND: todas las condiciones opcionales presentes deben cumplirse
+      const allPresentMet = presentOptionalConditions.length === optionalConditions.length;
+
+      if (allPresentMet) {
+        return {
+          applied: true,
+          result: 'PASS',
+          explanation: `Regla ${rule.code} aplicada: ${rule.description}`,
+          executionTime
+        };
+      } else {
+        const missingFacts = optionalConditions
+          .filter(c => {
+            const factPresent = availableFacts.includes(c.fact_code);
+            if (c.operator === 'not_equals') {
+              return factPresent; // Si está presente cuando no debería, es un problema
+            }
+            return !factPresent;
+          })
+          .map(c => c.fact_code);
+        
+        return {
+          applied: false,
+          result: 'FAIL',
+          explanation: `Regla ${rule.code} no aplicada: Faltan facts opcionales: ${missingFacts.join(', ')}`,
+          executionTime
+        };
+      }
+    }
+
+    // Si no hay condiciones, la regla siempre pasa
+    return {
+      applied: true,
+      result: 'PASS',
+      explanation: `Regla ${rule.code} aplicada: ${rule.description}`,
+      executionTime: Date.now() - startTime
+    };
   }
 
   /**
@@ -777,12 +963,8 @@ export class ForwardChainingService {
         priority: rule.priority
       });
 
-      if (evaluation.applied) {
-        // Si la regla detecta un failure
-        if (rule.failure_detected) {
-          failures.push(rule.failure_detected);
-        }
-        
+      if (evaluation.applied && evaluation.result === 'PASS') {
+        // Si la regla pasa (PASS), ejecutar acciones de éxito
         // Si la regla define un perfil de riesgo
         if (rule.success_action?.startsWith('RIESGO_')) {
           riskProfile.push(rule.success_action);
@@ -797,7 +979,13 @@ export class ForwardChainingService {
         if (rule.category === 'ESPECIAL' && rule.success_action) {
           specialConditions.push(rule.success_action);
         }
+      } else if (evaluation.result === 'FAIL') {
+        // Si la regla falla (FAIL), agregar el failure detectado
+        if (rule.failure_detected) {
+          failures.push(rule.failure_detected);
+        }
       }
+      // Si result es 'NOT_APPLICABLE', no hacemos nada (no generamos failure)
     }
 
     const totalTime = Date.now() - startTime;
@@ -810,6 +998,9 @@ export class ForwardChainingService {
       recommendedProducts: recommendedProducts.length,
       specialConditions: specialConditions.length
     });
+    if (failures.length > 0) {
+      console.log(`❌ Failures detectados (${failures.length}):`, failures);
+    }
 
     return {
       facts,
