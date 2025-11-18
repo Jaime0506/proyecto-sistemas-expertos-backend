@@ -1,5 +1,5 @@
-import { Controller, Post, Get, Body, Param, ParseIntPipe } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import { Controller, Post, Get, Body, Param, ParseIntPipe, Query } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { InferenceEngineService } from './inference-engine.service';
 import { StartEvaluationDto } from './dto/start-evaluation.dto';
 import { EvaluationResultDto } from './dto/evaluation-result.dto';
@@ -129,12 +129,54 @@ export class InferenceEngineController {
     description: 'Sesión no encontrada' 
   })
   async getEvaluationSession(@Param('sessionId') sessionId: string) {
-    // Implementar búsqueda por session_id
-    // Por ahora retornamos un placeholder
-    return {
-      message: `Sesión ${sessionId} - Implementación pendiente`,
-      session_id: sessionId
-    };
+    const session = await this.inferenceEngineService.getEvaluationSessionBySessionId(sessionId);
+    if (!session) {
+      throw new Error('Sesión no encontrada');
+    }
+    return session;
+  }
+
+  @Get('evaluations')
+  @ApiOperation({ 
+    summary: 'Obtener todas las evaluaciones (Panel Administrativo)',
+    description: 'Retorna todas las evaluaciones realizadas en el sistema con paginación'
+  })
+  @ApiQuery({ 
+    name: 'limit', 
+    required: false, 
+    type: Number, 
+    description: 'Número máximo de resultados (default: 50)',
+    example: 50
+  })
+  @ApiQuery({ 
+    name: 'offset', 
+    required: false, 
+    type: Number, 
+    description: 'Número de resultados a omitir (default: 0)',
+    example: 0
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Evaluaciones obtenidas exitosamente',
+    schema: {
+      type: 'object',
+      properties: {
+        evaluations: {
+          type: 'array',
+          items: { type: 'object' }
+        },
+        total: { type: 'number', example: 150 }
+      }
+    }
+  })
+  async getAllEvaluations(
+    @Query('limit') limit?: number,
+    @Query('offset') offset?: number
+  ) {
+    return await this.inferenceEngineService.getAllEvaluations(
+      limit ? parseInt(limit.toString(), 10) : 50,
+      offset ? parseInt(offset.toString(), 10) : 0
+    );
   }
 
   @Post('test')

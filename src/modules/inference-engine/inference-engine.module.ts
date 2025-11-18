@@ -8,6 +8,7 @@ import { RuleExecution } from './entities/rule-execution.entity';
 import { Fact } from '../facts/entities/fact.entity';
 import { Failure } from '../failures/entities/failure.entity';
 import { FactsFailure } from '../facts-failure/entities/facts-failure.entity';
+import { User } from '../users/entities/user.entity';
 
 @Module({
   imports: [
@@ -16,7 +17,8 @@ import { FactsFailure } from '../facts-failure/entities/facts-failure.entity';
       RuleExecution,
       Fact,
       Failure,
-      FactsFailure
+      FactsFailure,
+      User
     ])
   ],
   controllers: [InferenceEngineController],

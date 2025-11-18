@@ -354,12 +354,52 @@ export class InferenceEngineService {
         await this.ruleExecutionRepository.save(ruleExecutionEntity);
       }
 
-      // 8. Actualizar sesión de evaluación
+      // 8. Actualizar sesión de evaluación con toda la información detallada
+      const totalTime = Date.now() - startTime;
+      
       evaluationSession.facts_detected = forwardChainingResult.facts;
       evaluationSession.evaluation_result = {
+        // Información de conversión
+        input_data_received: evaluationData.input_data,
+        facts_detected: forwardChainingResult.facts,
+        facts_count: forwardChainingResult.facts.length,
+        
+        // Resultados del encadenamiento
+        rule_executions: forwardChainingResult.ruleExecutions.map(re => ({
+          rule_code: re.rule_code,
+          rule_name: re.rule_name,
+          category: re.category,
+          result: re.result,
+          explanation: re.explanation,
+          execution_time_ms: re.execution_time_ms,
+          priority: re.priority
+        })),
+        rule_executions_count: forwardChainingResult.ruleExecutions.length,
+        
+        // Failures y resultados
         failures: forwardChainingResult.failures,
-        riskProfile: forwardChainingResult.riskProfile,
-        recommendedProducts: forwardChainingResult.recommendedProducts
+        failures_count: forwardChainingResult.failures.length,
+        risk_profile: forwardChainingResult.riskProfile,
+        recommended_products: forwardChainingResult.recommendedProducts,
+        recommended_products_count: forwardChainingResult.recommendedProducts.length,
+        special_conditions: forwardChainingResult.specialConditions,
+        special_conditions_count: forwardChainingResult.specialConditions.length,
+        
+        // Métricas de confianza
+        confidence_calculation: {
+          base: 85,
+          failures_penalty: forwardChainingResult.failures.length * -8,
+          failed_rules_penalty: forwardChainingResult.ruleExecutions.filter(re => re.result === 'FAIL').length * -1.8,
+          positive_facts_bonus: forwardChainingResult.facts.length * 1.5,
+          successful_rules_bonus: forwardChainingResult.ruleExecutions.filter(re => re.result === 'PASS').length * 0.5
+        },
+        
+        // Tiempos de ejecución
+        execution_times: {
+          conversion_time_ms: 0, // Se calculará si está disponible
+          forward_chaining_time_ms: 0, // Se calculará si está disponible
+          total_time_ms: totalTime
+        }
       };
       evaluationSession.final_decision = finalDecision;
       evaluationSession.risk_profile = forwardChainingResult.riskProfile;
@@ -368,8 +408,6 @@ export class InferenceEngineService {
       evaluationSession.confidence_score = confidenceScore;
       evaluationSession.status = 'COMPLETED';
       await this.evaluationSessionRepository.save(evaluationSession);
-
-      const totalTime = Date.now() - startTime;
 
       // 9. Preparar respuesta
       const result: EvaluationResultDto = {
@@ -421,8 +459,33 @@ export class InferenceEngineService {
   async getEvaluationHistory(userId: number): Promise<EvaluationSession[]> {
     return await this.evaluationSessionRepository.find({
       where: { user_id: userId },
+      relations: ['user'], // Incluir la relación con User para obtener el username
       order: { created_at: 'DESC' },
       take: 10
+    });
+  }
+
+  /**
+   * Obtiene todas las evaluaciones (para panel administrativo)
+   */
+  async getAllEvaluations(limit: number = 50, offset: number = 0): Promise<{ evaluations: EvaluationSession[], total: number }> {
+    const [evaluations, total] = await this.evaluationSessionRepository.findAndCount({
+      relations: ['user'], // Incluir la relación con User para obtener el username
+      order: { created_at: 'DESC' },
+      take: limit,
+      skip: offset
+    });
+
+    return { evaluations, total };
+  }
+
+  /**
+   * Obtiene una sesión de evaluación por session_id
+   */
+  async getEvaluationSessionBySessionId(sessionId: string): Promise<EvaluationSession | null> {
+    return await this.evaluationSessionRepository.findOne({
+      where: { session_id: sessionId },
+      relations: ['user'] // Incluir la relación con User para obtener el username
     });
   }
 

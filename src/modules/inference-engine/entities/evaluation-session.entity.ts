@@ -1,4 +1,5 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
+import { User } from '../../users/entities/user.entity';
 
 @Entity({ name: 'evaluation_sessions', schema: 'sys' })
 export class EvaluationSession {
@@ -10,6 +11,10 @@ export class EvaluationSession {
 
   @Column({ type: 'integer', nullable: true })
   user_id: number;
+
+  @ManyToOne(() => User, { nullable: true })
+  @JoinColumn({ name: 'user_id' })
+  user: User;
 
   @Column({ type: 'jsonb' })
   input_data: any; // Datos de entrada del usuario (respuestas del survey)
