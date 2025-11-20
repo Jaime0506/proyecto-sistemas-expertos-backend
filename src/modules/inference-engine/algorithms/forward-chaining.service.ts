@@ -1,9 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Fact } from '../../facts/entities/fact.entity';
 import { Failure } from '../../failures/entities/failure.entity';
 import { FactsFailure } from '../../facts-failure/entities/facts-failure.entity';
+import { Rule } from '../../rules/entities/rule.entity';
+import { RuleFact } from '../../rule-fact/entities/rule-fact.entity';
 
 export interface RuleCondition {
   fact_code: string;
@@ -27,6 +29,8 @@ export interface RuleDefinition {
 
 @Injectable()
 export class ForwardChainingService {
+  private readonly logger = new Logger(ForwardChainingService.name);
+
   constructor(
     @InjectRepository(Fact)
     private factRepository: Repository<Fact>,
@@ -34,432 +38,53 @@ export class ForwardChainingService {
     private failureRepository: Repository<Failure>,
     @InjectRepository(FactsFailure)
     private factsFailureRepository: Repository<FactsFailure>,
+    @InjectRepository(Rule)
+    private ruleRepository: Repository<Rule>,
+    @InjectRepository(RuleFact)
+    private ruleFactRepository: Repository<RuleFact>,
   ) {}
 
   /**
-   * Definición de todas las reglas del sistema experto basadas en R001-R052
+   * Obtiene las reglas del sistema desde la base de datos
    */
-  private getSystemRules(): RuleDefinition[] {
-    return [
-      // REGLAS DE ADMISIBILIDAD GENERAL (R001-R005)
-      {
-        code: 'R001',
-        name: 'Verificación de Edad',
-        category: 'ADMISIBILIDAD',
-        priority: 1,
-        conditions: [
-          { fact_code: 'FACT_EDAD_18_75', operator: 'equals', value: true, required: true }
-        ],
-        failure_detected: 'FALLA_EDAD_FUERA_RANGO',
-        description: 'Verificar que la edad esté entre 18 y 75 años'
-      },
-      {
-        code: 'R002',
-        name: 'Verificación de Ingresos Mínimos',
-        category: 'ADMISIBILIDAD',
-        priority: 2,
-        conditions: [
-          { fact_code: 'FACT_INGRESOS_MIN_1_SMMLV', operator: 'equals', value: true, required: true }
-        ],
-        failure_detected: 'FALLA_INGRESOS_INSUFICIENTES',
-        description: 'Verificar ingresos mínimos de 1 SMMLV'
-      },
-      {
-        code: 'R003',
-        name: 'Verificación de Score Crediticio',
-        category: 'ADMISIBILIDAD',
-        priority: 3,
-        conditions: [
-          { fact_code: 'FACT_SCORE_MIN_300', operator: 'equals', value: true, required: true }
-        ],
-        failure_detected: 'FALLA_SCORE_INSUFICIENTE',
-        description: 'Verificar score crediticio mínimo de 300 puntos'
-      },
-      {
-        code: 'R004',
-        name: 'Verificación de Nivel de Endeudamiento',
-        category: 'ADMISIBILIDAD',
-        priority: 4,
-        conditions: [
-          { fact_code: 'FACT_ENDEUDAMIENTO_MAX_50', operator: 'equals', value: true, required: true }
-        ],
-        failure_detected: 'FALLA_ENDEUDAMIENTO_EXCESIVO',
-        description: 'Verificar que el endeudamiento no exceda el 50%'
-      },
-      {
-        code: 'R005',
-        name: 'Verificación de Mora Reciente',
-        category: 'ADMISIBILIDAD',
-        priority: 5,
-        conditions: [
-          { fact_code: 'FACT_MORA_MAX_90_DIAS', operator: 'equals', value: true, required: true }
-        ],
-        failure_detected: 'FALLA_MORA_RECIENTE_SIGNIFICATIVA',
-        description: 'Verificar que la mora no exceda 90 días'
-      },
+  private async getSystemRulesFromDB(): Promise<RuleDefinition[]> {
+    const rules = await this.ruleRepository.find({
+      relations: ['rule_facts', 'rule_facts.fact', 'failure'],
+      order: { priority: 'ASC' }
+    });
 
-      // REGLAS DE CLASIFICACIÓN DE RIESGO (R010-R012)
-      {
-        code: 'R010',
-        name: 'Clasificación Riesgo Bajo',
-        category: 'RIESGO',
-        priority: 10,
-        conditions: [
-          { fact_code: 'FACT_SCORE_700_PLUS', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_MORA_MAX_30_DIAS', operator: 'equals', value: true, required: true }
-        ],
-        success_action: 'RIESGO_BAJO',
-        description: 'Clasificar como riesgo bajo'
-      },
-      {
-        code: 'R011',
-        name: 'Clasificación Riesgo Medio',
-        category: 'RIESGO',
-        priority: 11,
-        conditions: [
-          { fact_code: 'FACT_SCORE_500_699', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_MORA_MAX_60_DIAS', operator: 'equals', value: true, required: true }
-        ],
-        success_action: 'RIESGO_MEDIO',
-        description: 'Clasificar como riesgo medio'
-      },
-      {
-        code: 'R012',
-        name: 'Clasificación Riesgo Alto',
-        category: 'RIESGO',
-        priority: 12,
-        conditions: [
-          { fact_code: 'FACT_SCORE_300_499', operator: 'equals', value: true, required: true }
-        ],
-        success_action: 'RIESGO_ALTO',
-        description: 'Clasificar como riesgo alto'
-      },
+    const ruleDefinitions: RuleDefinition[] = [];
 
-      // REGLAS DE RECOMENDACIÓN DE PRODUCTOS - BAJO RIESGO (R020-R023)
-      {
-        code: 'R020',
-        name: 'Crédito Hipotecario',
-        category: 'PRODUCTO',
-        priority: 20,
-        conditions: [
-          { fact_code: 'FACT_PERFIL_RIESGO_BAJO', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_FINALIDAD_VIVIENDA', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_INGRESOS_MIN_4_SMMLV', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_CUOTA_MAX_30_INGRESOS', operator: 'equals', value: true, required: true }
-        ],
-        success_action: 'CREDITO_HIPOTECARIO',
-        description: 'Recomendar crédito hipotecario'
-      },
-      {
-        code: 'R021',
-        name: 'Crédito Vehículo',
-        category: 'PRODUCTO',
-        priority: 21,
-        conditions: [
-          { fact_code: 'FACT_PERFIL_RIESGO_BAJO', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_FINALIDAD_VEHICULO', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_INGRESOS_MIN_3_SMMLV', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_CUOTA_MAX_40_INGRESOS', operator: 'equals', value: true, required: true }
-        ],
-        success_action: 'CREDITO_VEHICULO',
-        description: 'Recomendar crédito vehicular'
-      },
-      {
-        code: 'R022',
-        name: 'Crédito Libre Inversión',
-        category: 'PRODUCTO',
-        priority: 22,
-        conditions: [
-          { fact_code: 'FACT_PERFIL_RIESGO_BAJO', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_INGRESOS_MIN_3_SMMLV', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_ANTIGUEDAD_LABORAL_12_MESES', operator: 'equals', value: true, required: true }
-        ],
-        success_action: 'CREDITO_LIBRE_INVERSION',
-        description: 'Recomendar crédito de libre inversión'
-      },
-      {
-        code: 'R023',
-        name: 'Tarjeta de Crédito',
-        category: 'PRODUCTO',
-        priority: 23,
-        conditions: [
-          { fact_code: 'FACT_PERFIL_RIESGO_BAJO', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_INGRESOS_MIN_2_SMMLV', operator: 'equals', value: true, required: true }
-        ],
-        success_action: 'TARJETA_CREDITO',
-        description: 'Recomendar tarjeta de crédito'
-      },
+    for (const rule of rules) {
+      // Usar los rule_facts ya cargados en la relación, ordenados por posición
+      const ruleFacts = (rule.rule_facts || [])
+        .filter(rf => rf.fact) // Asegurar que el fact esté cargado
+        .sort((a, b) => a.position - b.position);
 
-      // REGLAS DE RECOMENDACIÓN DE PRODUCTOS - MEDIO RIESGO (R030-R032)
-      {
-        code: 'R030',
-        name: 'Crédito Vehículo Condicionado',
-        category: 'PRODUCTO',
-        priority: 30,
-        conditions: [
-          { fact_code: 'FACT_PERFIL_RIESGO_MEDIO', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_FINALIDAD_VEHICULO', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_INGRESOS_MIN_4_SMMLV', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_PORCENTAJE_INICIAL_30', operator: 'equals', value: true, required: true }
-        ],
-        success_action: 'CREDITO_VEHICULO_CONDICIONADO',
-        description: 'Recomendar crédito vehicular condicionado'
-      },
-      {
-        code: 'R031',
-        name: 'Crédito con Codeudor',
-        category: 'PRODUCTO',
-        priority: 31,
-        conditions: [
-          { fact_code: 'FACT_PERFIL_RIESGO_MEDIO', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_INGRESOS_MIN_2_SMMLV', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_CODEUDOR_DISPONIBLE', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_INGRESOS_CODEUDOR_2_SMMLV', operator: 'equals', value: true, required: true }
-        ],
-        success_action: 'CREDITO_CON_CODEUDOR',
-        description: 'Recomendar crédito con codeudor'
-      },
-      {
-        code: 'R032',
-        name: 'Microcrédito',
-        category: 'PRODUCTO',
-        priority: 32,
-        conditions: [
-          { fact_code: 'FACT_PERFIL_RIESGO_MEDIO', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_INGRESOS_MIN_1_SMMLV', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_ACTIVIDAD_MICROEMPRESARIAL', operator: 'equals', value: true, required: true }
-        ],
-        success_action: 'MICROCREDITO',
-        description: 'Recomendar microcrédito'
-      },
+      const conditions: RuleCondition[] = ruleFacts.map(rf => ({
+        fact_code: rf.fact.code,
+        operator: 'equals' as const,
+        value: true,
+        required: true
+      }));
 
-      // REGLAS DE VALIDACIÓN NORMATIVA (R040-R042)
-      // Estas reglas generan failures cuando los facts problemáticos están presentes
-      {
-        code: 'R040',
-        name: 'Validación SARLAFT',
-        category: 'NORMATIVA',
-        priority: 40,
-        conditions: [
-          { fact_code: 'FACT_ACTIVIDAD_ALTO_RIESGO_SARLAFT', operator: 'equals', value: true, required: true }
-        ],
-        failure_detected: 'FALLA_ACTIVIDAD_ALTO_RIESGO_SARLAFT',
-        description: 'Validar actividades de alto riesgo SARLAFT',
-        // Esta regla falla cuando el fact está presente (invertir lógica)
-        invert_logic: true
-      },
-      {
-        code: 'R041',
-        name: 'Validación PEP',
-        category: 'NORMATIVA',
-        priority: 41,
-        conditions: [
-          { fact_code: 'FACT_PERSONA_PEP', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_APROBACION_COMITE_PEP', operator: 'not_equals', value: true, required: false }
-        ],
-        failure_detected: 'FALLA_PERSONA_PEP_SIN_APROBACION',
-        description: 'Validar personas políticamente expuestas',
-        // Esta regla falla cuando PEP está presente pero sin aprobación
-        invert_logic: true
-      },
-      {
-        code: 'R042',
-        name: 'Múltiples Consultas',
-        category: 'NORMATIVA',
-        priority: 42,
-        conditions: [
-          { fact_code: 'FACT_MULTIPLES_CONSULTAS', operator: 'equals', value: true, required: true }
-        ],
-        failure_detected: 'FALLA_MULTIPLES_CONSULTAS',
-        description: 'Detectar múltiples consultas simultáneas',
-        // Esta regla falla cuando el fact está presente (invertir lógica)
-        invert_logic: true
-      },
+      ruleDefinitions.push({
+        code: rule.code,
+        name: rule.name || '',
+        category: rule.category || '',
+        priority: rule.priority || 0,
+        conditions,
+        failure_detected: rule.failure?.name,
+        success_action: rule.success_action || undefined,
+        description: rule.description || '',
+        use_or_logic: rule.logic_type === 'OR',
+        invert_logic: rule.category === 'NORMATIVA' ? true : false
+      });
+    }
 
-      // REGLAS DE CONDICIONES ESPECIALES (R050-R052)
-      {
-        code: 'R050',
-        name: 'Cliente Preferencial',
-        category: 'ESPECIAL',
-        priority: 50,
-        conditions: [
-          { fact_code: 'FACT_ANTIGUEDAD_CLIENTE_24_MESES', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_CUMPLIMIENTO_HISTORICO_95', operator: 'equals', value: true, required: true }
-        ],
-        success_action: 'CLIENTE_PREFERENCIAL',
-        description: 'Aplicar beneficios de cliente preferencial'
-      },
-      {
-        code: 'R051',
-        name: 'Empleado Empresa Convenio',
-        category: 'ESPECIAL',
-        priority: 51,
-        conditions: [
-          { fact_code: 'FACT_EMPLEADO_EMPRESA_CONVENIO', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_DESCUENTO_NOMINA_AUTORIZADO', operator: 'equals', value: true, required: true }
-        ],
-        success_action: 'CREDITO_NOMINA',
-        description: 'Aplicar crédito de nómina'
-      },
-      {
-        code: 'R052',
-        name: 'Pensionado',
-        category: 'ESPECIAL',
-        priority: 52,
-        conditions: [
-          { fact_code: 'FACT_TIPO_VINCULACION_PENSIONADO', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_MESADA_PENSION_2_SMMLV', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_PENSION_LEGAL', operator: 'equals', value: true, required: true }
-        ],
-        success_action: 'CREDITO_PENSIONADOS',
-        description: 'Aplicar crédito para pensionados'
-      },
-
-      // REGLAS DE RECOMENDACIÓN DE PRODUCTOS - ALTO RIESGO (R033-R035)
-      {
-        code: 'R033',
-        name: 'Crédito Vehículo Alto Riesgo',
-        category: 'PRODUCTO',
-        priority: 33,
-        conditions: [
-          { fact_code: 'FACT_PERFIL_RIESGO_ALTO', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_FINALIDAD_VEHICULO', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_INGRESOS_MIN_5_SMMLV', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_ENGANCHE_MIN_50', operator: 'equals', value: true, required: true }
-        ],
-        success_action: 'CREDITO_VEHICULO_ALTO_RIESGO',
-        description: 'Recomendar crédito vehicular para alto riesgo'
-      },
-      {
-        code: 'R034',
-        name: 'Microcrédito Alto Riesgo',
-        category: 'PRODUCTO',
-        priority: 34,
-        conditions: [
-          { fact_code: 'FACT_PERFIL_RIESGO_ALTO', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_INGRESOS_MIN_2_SMMLV', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_ACTIVIDAD_MICROEMPRESARIAL', operator: 'equals', value: true, required: true }
-        ],
-        success_action: 'MICROCREDITO_ALTO_RIESGO',
-        description: 'Recomendar microcrédito para alto riesgo'
-      },
-      {
-        code: 'R035',
-        name: 'Tarjeta de Crédito Condicionada',
-        category: 'PRODUCTO',
-        priority: 35,
-        conditions: [
-          { fact_code: 'FACT_PERFIL_RIESGO_ALTO', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_INGRESOS_MIN_3_SMMLV', operator: 'equals', value: true, required: true },
-          { fact_code: 'FACT_ANTIGUEDAD_LABORAL_24_MESES', operator: 'equals', value: true, required: true }
-        ],
-        success_action: 'TARJETA_CREDITO_CONDICIONADA',
-        description: 'Recomendar tarjeta de crédito condicionada'
-      },
-
-      // REGLAS DE VALIDACIÓN ADICIONAL (R043-R048)
-      // Estas reglas solo se ejecutan si los facts requeridos están presentes
-      // Si no hay datos para evaluarlas, no generan failures
-      {
-        code: 'R043',
-        name: 'Validación de Documentos',
-        category: 'VALIDACION',
-        priority: 43,
-        conditions: [
-          { fact_code: 'FACT_DOCUMENTOS_COMPLETOS', operator: 'equals', value: true, required: false },
-          { fact_code: 'FACT_DOCUMENTOS_VALIDOS', operator: 'equals', value: true, required: false }
-        ],
-        failure_detected: 'FALLA_DOCUMENTOS_INCOMPLETOS',
-        description: 'Validar completitud y validez de documentos'
-      },
-      {
-        code: 'R044',
-        name: 'Validación de Referencias',
-        category: 'VALIDACION',
-        priority: 44,
-        conditions: [
-          { fact_code: 'FACT_REFERENCIAS_VERIFICADAS', operator: 'equals', value: true, required: false },
-          { fact_code: 'FACT_REFERENCIAS_POSITIVAS', operator: 'equals', value: true, required: false }
-        ],
-        failure_detected: 'FALLA_REFERENCIAS_NEGATIVAS',
-        description: 'Validar referencias personales y comerciales'
-      },
-      {
-        code: 'R045',
-        name: 'Validación de Garantías',
-        category: 'VALIDACION',
-        priority: 45,
-        conditions: [
-          { fact_code: 'FACT_GARANTIAS_SUFICIENTES', operator: 'equals', value: true, required: false },
-          { fact_code: 'FACT_GARANTIAS_AVALUADAS', operator: 'equals', value: true, required: false }
-        ],
-        failure_detected: 'FALLA_GARANTIAS_INSUFICIENTES',
-        description: 'Validar suficiencia y avalúo de garantías'
-      },
-      {
-        code: 'R046',
-        name: 'Validación de Historial Crediticio',
-        category: 'VALIDACION',
-        priority: 46,
-        conditions: [
-          { fact_code: 'FACT_HISTORIAL_CREDITICIO_POSITIVO', operator: 'equals', value: true, required: false },
-          { fact_code: 'FACT_CUMPLIMIENTO_PAGOS', operator: 'equals', value: true, required: false }
-        ],
-        failure_detected: 'FALLA_HISTORIAL_CREDITICIO_NEGATIVO',
-        description: 'Validar historial crediticio y cumplimiento de pagos'
-      },
-      {
-        code: 'R047',
-        name: 'Validación de Capacidad de Pago',
-        category: 'VALIDACION',
-        priority: 47,
-        conditions: [
-          { fact_code: 'FACT_CAPACIDAD_PAGO_DEMOSTRADA', operator: 'equals', value: true, required: false },
-          { fact_code: 'FACT_MARGEN_PAGO_SUFICIENTE', operator: 'equals', value: true, required: false }
-        ],
-        failure_detected: 'FALLA_CAPACIDAD_PAGO_INSUFICIENTE',
-        description: 'Validar capacidad de pago del solicitante'
-      },
-      {
-        code: 'R048',
-        name: 'Validación de Estabilidad Laboral',
-        category: 'VALIDACION',
-        priority: 48,
-        conditions: [
-          { fact_code: 'FACT_ESTABILIDAD_LABORAL', operator: 'equals', value: true, required: false },
-          { fact_code: 'FACT_ANTIGUEDAD_LABORAL_MINIMA', operator: 'equals', value: true, required: false }
-        ],
-        failure_detected: 'FALLA_ESTABILIDAD_LABORAL_INSUFICIENTE',
-        description: 'Validar estabilidad y antigüedad laboral',
-        // Esta regla pasa si AL MENOS UNA condición se cumple (lógica OR)
-        use_or_logic: true
-      },
-
-      // REGLAS DE EXPLICABILIDAD (R060-R061)
-      {
-        code: 'R060',
-        name: 'Generación de Justificación',
-        category: 'EXPLICABILIDAD',
-        priority: 60,
-        conditions: [
-          { fact_code: 'FACT_DECISION_TOMADA', operator: 'equals', value: true, required: true }
-        ],
-        success_action: 'GENERAR_EXPLICACION_DETALLADA',
-        description: 'Generar explicación detallada de la decisión'
-      },
-      {
-        code: 'R061',
-        name: 'Trazabilidad de Decisiones',
-        category: 'EXPLICABILIDAD',
-        priority: 61,
-        conditions: [
-          { fact_code: 'FACT_EVALUACION_COMPLETADA', operator: 'equals', value: true, required: true }
-        ],
-        success_action: 'REGISTRAR_TRAZABILIDAD',
-        description: 'Registrar trazabilidad completa de la evaluación'
-      }
-    ];
+    return ruleDefinitions;
   }
+
 
   /**
    * Convierte los datos de entrada del usuario en facts del sistema
@@ -468,8 +93,7 @@ export class ForwardChainingService {
     const facts: string[] = [];
     const startTime = Date.now();
 
-    console.log('🔄 Convirtiendo datos de entrada a facts...');
-    console.log('📥 Datos recibidos:', JSON.stringify(inputData, null, 2));
+    this.logger.debug('Convirtiendo datos de entrada a facts...');
 
     // Mapeo de datos de entrada a facts
     const factMappings = {
@@ -521,11 +145,8 @@ export class ForwardChainingService {
         }
       },
 
-      // Endeudamiento
-      // Acepta tanto porcentajes (0-100) como decimales (0-1)
+      // Endeudamiento (acepta porcentajes 0-100 o decimales 0-1)
       debt_to_income_ratio: (ratio: number) => {
-        // Si el valor es mayor a 1, asumimos que es un porcentaje (0-100)
-        // Si es menor o igual a 1, asumimos que es un decimal (0-1)
         const normalizedRatio = ratio > 1 ? ratio / 100 : ratio;
         
         if (normalizedRatio <= 0.50) {
@@ -719,13 +340,12 @@ export class ForwardChainingService {
       if (requiredFields.includes(key)) {
         if (value !== undefined && value !== null) {
           try {
-            console.log(`  🔍 Procesando campo requerido ${key}:`, value);
             (mapper as Function)(value);
           } catch (error) {
-            console.warn(`⚠️ Error mapeando ${key}:`, error);
+            this.logger.warn(`Error mapeando campo requerido ${key}:`, error);
           }
         } else {
-          console.warn(`⚠️ Campo requerido ${key} no está definido`);
+          this.logger.warn(`Campo requerido ${key} no está definido`);
         }
       } 
       // Campos opcionales: solo procesar si tienen un valor válido
@@ -741,24 +361,18 @@ export class ForwardChainingService {
           
           if (shouldProcess) {
             try {
-              console.log(`  🔍 Procesando campo opcional ${key}:`, value);
               (mapper as Function)(value);
             } catch (error) {
-              console.warn(`⚠️ Error mapeando ${key}:`, error);
+              this.logger.warn(`Error mapeando campo opcional ${key}:`, error);
             }
-          } else {
-            console.log(`  ⏭️  Omitiendo ${key} (string vacío):`, value);
           }
-        } else {
-          console.log(`  ⏭️  Omitiendo ${key} (undefined o null)`);
         }
       }
     }
 
 
     const executionTime = Date.now() - startTime;
-    console.log(`✅ Facts detectados (${facts.length}):`, facts);
-    console.log(`⏱️ Tiempo de conversión: ${executionTime}ms`);
+    this.logger.debug(`Facts detectados: ${facts.length} en ${executionTime}ms`);
 
     return facts;
   }
@@ -771,12 +385,25 @@ export class ForwardChainingService {
     result: string;
     explanation: string;
     executionTime: number;
+    conditions?: Record<string, any>;
   }> {
     const startTime = Date.now();
 
     // Separar condiciones requeridas y opcionales
     const requiredConditions = rule.conditions.filter(c => c.required);
     const optionalConditions = rule.conditions.filter(c => !c.required);
+
+    // Construir objeto de condiciones evaluadas
+    const conditionsEvaluated: Record<string, any> = {};
+    rule.conditions.forEach(condition => {
+      const factPresent = availableFacts.includes(condition.fact_code);
+      conditionsEvaluated[condition.fact_code] = {
+        operator: condition.operator,
+        expected_value: condition.value,
+        actual_present: factPresent,
+        condition_met: condition.operator === 'not_equals' ? !factPresent : factPresent
+      };
+    });
 
     // Si hay condiciones requeridas, todas deben cumplirse
     if (requiredConditions.length > 0) {
@@ -799,14 +426,16 @@ export class ForwardChainingService {
             applied: true,
             result: 'FAIL', // Invertido: si los facts están presentes, falla
             explanation: `Regla ${rule.code} detectó condición problemática: ${rule.description}`,
-            executionTime
+            executionTime,
+            conditions: conditionsEvaluated
           };
         } else {
           return {
             applied: false,
             result: 'PASS', // Invertido: si los facts NO están presentes, pasa
             explanation: `Regla ${rule.code} no aplicable: Condiciones problemáticas no presentes`,
-            executionTime
+            executionTime,
+            conditions: conditionsEvaluated
           };
         }
       }
@@ -817,7 +446,8 @@ export class ForwardChainingService {
           applied: true,
           result: 'PASS',
           explanation: `Regla ${rule.code} aplicada: ${rule.description}`,
-          executionTime
+          executionTime,
+          conditions: conditionsEvaluated
         };
       } else {
         const missingFacts = requiredConditions
@@ -834,7 +464,8 @@ export class ForwardChainingService {
           applied: false,
           result: 'FAIL',
           explanation: `Regla ${rule.code} no aplicada: Faltan facts requeridos: ${missingFacts.join(', ')}`,
-          executionTime
+          executionTime,
+          conditions: conditionsEvaluated
         };
       }
     }
@@ -856,7 +487,8 @@ export class ForwardChainingService {
           applied: false,
           result: 'NOT_APPLICABLE',
           explanation: `Regla ${rule.code} no aplicable: No hay facts relacionados presentes`,
-          executionTime: Date.now() - startTime
+          executionTime: Date.now() - startTime,
+          conditions: conditionsEvaluated
         };
       }
 
@@ -869,14 +501,16 @@ export class ForwardChainingService {
             applied: true,
             result: 'PASS',
             explanation: `Regla ${rule.code} aplicada: ${rule.description} (al menos una condición cumplida)`,
-            executionTime
+            executionTime,
+            conditions: conditionsEvaluated
           };
         } else {
           return {
             applied: false,
             result: 'FAIL',
             explanation: `Regla ${rule.code} no aplicada: Ninguna condición se cumple`,
-            executionTime
+            executionTime,
+            conditions: conditionsEvaluated
           };
         }
       }
@@ -889,7 +523,8 @@ export class ForwardChainingService {
           applied: true,
           result: 'PASS',
           explanation: `Regla ${rule.code} aplicada: ${rule.description}`,
-          executionTime
+          executionTime,
+          conditions: conditionsEvaluated
         };
       } else {
         const missingFacts = optionalConditions
@@ -906,7 +541,8 @@ export class ForwardChainingService {
           applied: false,
           result: 'FAIL',
           explanation: `Regla ${rule.code} no aplicada: Faltan facts opcionales: ${missingFacts.join(', ')}`,
-          executionTime
+          executionTime,
+          conditions: conditionsEvaluated
         };
       }
     }
@@ -916,7 +552,8 @@ export class ForwardChainingService {
       applied: true,
       result: 'PASS',
       explanation: `Regla ${rule.code} aplicada: ${rule.description}`,
-      executionTime: Date.now() - startTime
+      executionTime: Date.now() - startTime,
+      conditions: conditionsEvaluated
     };
   }
 
@@ -932,13 +569,13 @@ export class ForwardChainingService {
     specialConditions: string[];
   }> {
     const startTime = Date.now();
-    console.log('🚀 Iniciando encadenamiento hacia adelante...');
+    this.logger.debug('Iniciando encadenamiento hacia adelante...');
 
     // 1. Convertir datos de entrada a facts
     const facts = await this.convertInputToFacts(inputData);
     
-    // 2. Obtener reglas del sistema
-    const rules = this.getSystemRules();
+    // 2. Obtener reglas del sistema desde la base de datos
+    const rules = await this.getSystemRulesFromDB();
     
     // 3. Ejecutar reglas en orden de prioridad
     const ruleExecutions: any[] = [];
@@ -960,53 +597,108 @@ export class ForwardChainingService {
         result: evaluation.result,
         explanation: evaluation.explanation,
         execution_time_ms: evaluation.executionTime,
-        priority: rule.priority
+        priority: rule.priority,
+        rule_conditions: evaluation.conditions || {}
       });
+
+      // Log detallado para depuración
+      if (evaluation.result === 'FAIL' || (evaluation.applied && evaluation.result === 'PASS')) {
+        this.logger.debug(`Regla ${rule.code} (${rule.category}): ${evaluation.result} - ${evaluation.explanation}`);
+      }
 
       if (evaluation.applied && evaluation.result === 'PASS') {
         // Si la regla pasa (PASS), ejecutar acciones de éxito
-        // Si la regla define un perfil de riesgo
+        // Si la regla define un perfil de riesgo, agregarlo y generar el fact correspondiente
         if (rule.success_action?.startsWith('RIESGO_')) {
           riskProfile.push(rule.success_action);
+          // Generar el fact de perfil de riesgo para que otras reglas puedan usarlo
+          const riskFactCode = rule.success_action === 'RIESGO_BAJO' ? 'FACT_PERFIL_RIESGO_BAJO' :
+                              rule.success_action === 'RIESGO_MEDIO' ? 'FACT_PERFIL_RIESGO_MEDIO' :
+                              rule.success_action === 'RIESGO_ALTO' ? 'FACT_PERFIL_RIESGO_ALTO' : null;
+          if (riskFactCode && !facts.includes(riskFactCode)) {
+            facts.push(riskFactCode);
+            this.logger.debug(`Fact generado: ${riskFactCode} (regla ${rule.code})`);
+          }
         }
         
-        // Si la regla recomienda un producto
         if (rule.success_action && !rule.success_action.startsWith('RIESGO_')) {
           recommendedProducts.push(rule.success_action);
         }
         
-        // Si la regla aplica condiciones especiales
         if (rule.category === 'ESPECIAL' && rule.success_action) {
           specialConditions.push(rule.success_action);
         }
-      } else if (evaluation.result === 'FAIL') {
-        // Si la regla falla (FAIL), agregar el failure detectado
+      } else if (evaluation.result === 'FAIL' && evaluation.applied) {
         if (rule.failure_detected) {
           failures.push(rule.failure_detected);
+          this.logger.debug(`Failure agregado: ${rule.failure_detected} (regla ${rule.code})`);
         }
       }
-      // Si result es 'NOT_APPLICABLE', no hacemos nada (no generamos failure)
+    }
+
+    // Si no se determinó un perfil de riesgo por las reglas, calcularlo con los datos disponibles
+    let finalRiskProfile = riskProfile[0] || null;
+    
+    if (!finalRiskProfile) {
+      // Intentar determinar el perfil de riesgo basándose en los facts disponibles
+      const hasScore700Plus = facts.includes('FACT_SCORE_700_PLUS');
+      const hasScore500_699 = facts.includes('FACT_SCORE_500_699');
+      const hasScore300_499 = facts.includes('FACT_SCORE_300_499');
+      const hasMora30 = facts.includes('FACT_MORA_MAX_30_DIAS');
+      const hasMora60 = facts.includes('FACT_MORA_MAX_60_DIAS');
+      
+      // Determinar perfil de riesgo basado en score y mora disponibles
+      if (hasScore700Plus && hasMora30) {
+        finalRiskProfile = 'RIESGO_BAJO';
+        facts.push('FACT_PERFIL_RIESGO_BAJO');
+        this.logger.debug('Perfil de riesgo determinado por datos disponibles: RIESGO_BAJO');
+      } else if (hasScore500_699 && hasMora60) {
+        finalRiskProfile = 'RIESGO_MEDIO';
+        facts.push('FACT_PERFIL_RIESGO_MEDIO');
+        this.logger.debug('Perfil de riesgo determinado por datos disponibles: RIESGO_MEDIO');
+      } else if (hasScore300_499) {
+        finalRiskProfile = 'RIESGO_ALTO';
+        facts.push('FACT_PERFIL_RIESGO_ALTO');
+        this.logger.debug('Perfil de riesgo determinado por datos disponibles: RIESGO_ALTO');
+      } else if (hasScore700Plus) {
+        // Si tiene score alto pero mora mayor, considerar medio
+        finalRiskProfile = 'RIESGO_MEDIO';
+        facts.push('FACT_PERFIL_RIESGO_MEDIO');
+        this.logger.debug('Perfil de riesgo determinado por datos disponibles: RIESGO_MEDIO (score alto pero mora mayor)');
+      } else if (hasScore500_699) {
+        // Si tiene score medio pero mora mayor, considerar alto
+        finalRiskProfile = 'RIESGO_ALTO';
+        facts.push('FACT_PERFIL_RIESGO_ALTO');
+        this.logger.debug('Perfil de riesgo determinado por datos disponibles: RIESGO_ALTO (score medio pero mora mayor)');
+      } else {
+        // Si no hay datos suficientes de score, intentar determinar por mora
+        if (facts.includes('FACT_MORA_RECIENTE_SIGNIFICATIVA')) {
+          finalRiskProfile = 'RIESGO_ALTO';
+          facts.push('FACT_PERFIL_RIESGO_ALTO');
+          this.logger.debug('Perfil de riesgo determinado por mora significativa: RIESGO_ALTO');
+        } else if (hasMora30 || hasMora60) {
+          // Si hay mora controlada pero no hay score, considerar medio-alto
+          finalRiskProfile = 'RIESGO_ALTO';
+          facts.push('FACT_PERFIL_RIESGO_ALTO');
+          this.logger.debug('Perfil de riesgo determinado por mora controlada sin score: RIESGO_ALTO');
+        } else {
+          finalRiskProfile = 'NO_DETERMINADO';
+          this.logger.debug('No se pudo determinar perfil de riesgo: datos insuficientes');
+        }
+      }
     }
 
     const totalTime = Date.now() - startTime;
-    console.log(`✅ Encadenamiento hacia adelante completado en ${totalTime}ms`);
-    console.log(`📊 Resultados:`, {
-      facts: facts.length,
-      ruleExecutions: ruleExecutions.length,
-      failures: failures.length,
-      riskProfile: riskProfile[0] || 'NO_DETERMINADO',
-      recommendedProducts: recommendedProducts.length,
-      specialConditions: specialConditions.length
-    });
+    this.logger.log(`Encadenamiento hacia adelante completado en ${totalTime}ms - Facts: ${facts.length}, Reglas: ${ruleExecutions.length}, Failures: ${failures.length}, Riesgo: ${finalRiskProfile}`);
     if (failures.length > 0) {
-      console.log(`❌ Failures detectados (${failures.length}):`, failures);
+      this.logger.warn(`Failures detectados (${failures.length}): ${failures.join(', ')}`);
     }
 
     return {
       facts,
       ruleExecutions,
       failures,
-      riskProfile: riskProfile[0] || 'NO_DETERMINADO',
+      riskProfile: finalRiskProfile,
       recommendedProducts,
       specialConditions
     };

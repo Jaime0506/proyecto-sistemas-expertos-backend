@@ -2,10 +2,10 @@ import { IsNotEmpty, IsOptional, IsNumber, IsString, IsObject } from 'class-vali
 import { ApiProperty } from '@nestjs/swagger';
 
 export class StartEvaluationDto {
-  @ApiProperty({ description: 'ID del usuario (opcional)', example: 1, required: false })
-  @IsOptional()
+  @ApiProperty({ description: 'ID del cliente sobre el cual se realizará la evaluación', example: 1, required: true })
+  @IsNotEmpty()
   @IsNumber()
-  user_id?: number;
+  cliente_id: number;
 
   @ApiProperty({ 
     description: 'Datos de entrada del usuario (respuestas del survey)', 

@@ -9,16 +9,24 @@ import {
 	ParseIntPipe,
 	HttpCode,
 	HttpStatus,
+	UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthorizationService } from '../authorization.service';
 import { CreateRoleDto } from '../dtos/create-role.dto';
 import { UpdateRoleDto } from '../dtos/update-role.dto';
 import { CreateRoleWithPermissionsDto } from '../dtos/create-role-with-permissions';
 import { UpdateRoleWithPermissionsDto } from '../dtos/update-role-with-permissions.dto';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../auth/guards/roles.guard';
+import { Roles } from '../../auth/decorators/roles.decorator';
+import { UserType } from '../../auth/entities/refresh-token.entity';
 
 @ApiTags('Roles')
+@ApiBearerAuth()
 @Controller('roles')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserType.ADMINISTRADOR)
 export class RolesController {
 	constructor(private readonly authorizationService: AuthorizationService) {}
 

@@ -7,10 +7,13 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, In } from 'typeorm';
-import { StatusEnum, User } from '../users/entities/user.entity';
+import { StatusEnum } from '../users/entities/user.entity';
+import { Experto } from '../users/entities/experto.entity';
+import { Administrador } from '../users/entities/administrador.entity';
 import { Role } from './entities/role.entity';
 import { Permission } from './entities/permission.entity';
-import { UserRole } from './entities/user-role.entity';
+import { ExpertoRole } from './entities/experto-role.entity';
+import { AdministradorRole } from './entities/administrador-role.entity';
 import { RolePermission } from './entities/role-permission.entity';
 import { CreateRoleDto } from './dtos/create-role.dto';
 import { UpdateRoleDto } from './dtos/update-role.dto';
@@ -20,7 +23,7 @@ import { AssignRoleToUserDto } from './dtos/assign-role-to-user.dto';
 import { AssignPermissionToRoleDto } from './dtos/assign-permission-to-role.dto';
 import { CheckPermissionDto } from './dtos/check-permission.dto';
 import { CreateRoleWithPermissionsDto } from './dtos/create-role-with-permissions';
-import { processTransaction } from 'src/utils/transaction';
+import { processTransaction } from '../../utils/transaction';
 import { UpdateRoleWithPermissionsDto } from './dtos/update-role-with-permissions.dto';
 
 export interface RoleWithPermissions {
@@ -38,14 +41,18 @@ export interface RoleWithPermissions {
 export class AuthorizationService {
 	constructor(
 		private readonly dataSource: DataSource,
-		@InjectRepository(User)
-		private readonly userRepository: Repository<User>,
+		@InjectRepository(Experto)
+		private readonly expertoRepository: Repository<Experto>,
+		@InjectRepository(Administrador)
+		private readonly administradorRepository: Repository<Administrador>,
 		@InjectRepository(Role)
 		private readonly roleRepository: Repository<Role>,
 		@InjectRepository(Permission)
 		private readonly permissionRepository: Repository<Permission>,
-		@InjectRepository(UserRole)
-		private readonly userRoleRepository: Repository<UserRole>,
+		@InjectRepository(ExpertoRole)
+		private readonly expertoRoleRepository: Repository<ExpertoRole>,
+		@InjectRepository(AdministradorRole)
+		private readonly administradorRoleRepository: Repository<AdministradorRole>,
 		@InjectRepository(RolePermission)
 		private readonly rolePermissionRepository: Repository<RolePermission>,
 	) {}
@@ -393,12 +400,14 @@ export class AuthorizationService {
 
 	async assignRoleToUser(assignDto: AssignRoleToUserDto) {
 		try {
-			// Verificar que el usuario existe
-			const user = await this.userRepository.findOne({
-				where: { id: assignDto.user_id },
-			});
-			if (!user) {
-				throw new NotFoundException('Usuario no encontrado');
+			// Buscar el usuario en las tablas de expertos y administradores
+			const [experto, administrador] = await Promise.all([
+				this.expertoRepository.findOne({ where: { id: assignDto.user_id } }),
+				this.administradorRepository.findOne({ where: { id: assignDto.user_id } }),
+			]);
+
+			if (!experto && !administrador) {
+				throw new NotFoundException('Usuario no encontrado (debe ser Experto o Administrador)');
 			}
 
 			// Verificar que el rol existe
@@ -409,31 +418,62 @@ export class AuthorizationService {
 				throw new NotFoundException('Rol no encontrado');
 			}
 
-			// Verificar que no existe ya la asignación
-			const existingAssignment = await this.userRoleRepository.findOne({
-				where: {
-					user_id: assignDto.user_id,
+			// Determinar qué tabla de roles usar
+			if (experto) {
+				// Verificar que no existe ya la asignación
+				const existingAssignment = await this.expertoRoleRepository.findOne({
+					where: {
+						experto_id: assignDto.user_id,
+						role_id: assignDto.role_id,
+					},
+				});
+
+				if (existingAssignment) {
+					throw new ConflictException(
+						'El rol ya está asignado al experto',
+					);
+				}
+
+				const expertoRole = await this.expertoRoleRepository.save({
+					experto_id: assignDto.user_id,
 					role_id: assignDto.role_id,
-				},
-			});
+				});
 
-			if (existingAssignment) {
-				throw new ConflictException(
-					'El rol ya está asignado al usuario',
-				);
+				return {
+					message: 'Rol asignado al experto correctamente',
+					data: expertoRole,
+					status: HttpStatus.CREATED,
+				};
+			} else {
+				// Verificar que no existe ya la asignación
+				const existingAssignment = await this.administradorRoleRepository.findOne({
+					where: {
+						administrador_id: assignDto.user_id,
+						role_id: assignDto.role_id,
+					},
+				});
+
+				if (existingAssignment) {
+					throw new ConflictException(
+						'El rol ya está asignado al administrador',
+					);
+				}
+
+				const administradorRole = await this.administradorRoleRepository.save({
+					administrador_id: assignDto.user_id,
+					role_id: assignDto.role_id,
+				});
+
+				return {
+					message: 'Rol asignado al administrador correctamente',
+					data: administradorRole,
+					status: HttpStatus.CREATED,
+				};
 			}
-
-			const userRole = await this.userRoleRepository.save({
-				user_id: assignDto.user_id,
-				role_id: assignDto.role_id,
-			});
-
-			return {
-				message: 'Rol asignado al usuario correctamente',
-				data: userRole,
-				status: HttpStatus.CREATED,
-			};
-		} catch {
+		} catch (error) {
+			if (error instanceof NotFoundException || error instanceof ConflictException) {
+				throw error;
+			}
 			throw new InternalServerErrorException(
 				'Error al asignar rol al usuario',
 			);
@@ -442,27 +482,44 @@ export class AuthorizationService {
 
 	async revokeRoleFromUser(assignDto: AssignRoleToUserDto) {
 		try {
-			const userRole = await this.userRoleRepository.findOne({
-				where: {
-					user_id: assignDto.user_id,
-					role_id: assignDto.role_id,
-				},
-			});
+			// Buscar en ambas tablas de roles
+			const [expertoRole, administradorRole] = await Promise.all([
+				this.expertoRoleRepository.findOne({
+					where: {
+						experto_id: assignDto.user_id,
+						role_id: assignDto.role_id,
+					},
+				}),
+				this.administradorRoleRepository.findOne({
+					where: {
+						administrador_id: assignDto.user_id,
+						role_id: assignDto.role_id,
+					},
+				}),
+			]);
 
-			if (!userRole) {
+			if (!expertoRole && !administradorRole) {
 				throw new NotFoundException('Asignación de rol no encontrada');
 			}
 
-			userRole.status = StatusEnum.DESACTIVE;
-			userRole.deleted_at = new Date();
-
-			await this.userRoleRepository.save(userRole);
+			if (expertoRole) {
+				expertoRole.status = StatusEnum.DESACTIVE;
+				expertoRole.deleted_at = new Date();
+				await this.expertoRoleRepository.save(expertoRole);
+			} else if (administradorRole) {
+				administradorRole.status = StatusEnum.DESACTIVE;
+				administradorRole.deleted_at = new Date();
+				await this.administradorRoleRepository.save(administradorRole);
+			}
 
 			return {
 				message: 'Rol revocado del usuario correctamente',
 				status: HttpStatus.OK,
 			};
-		} catch {
+		} catch (error) {
+			if (error instanceof NotFoundException) {
+				throw error;
+			}
 			throw new InternalServerErrorException(
 				'Error al revocar rol del usuario',
 			);
@@ -473,10 +530,23 @@ export class AuthorizationService {
 
 	async getUserRoles(user_id: number) {
 		try {
-			const userRoles = await this.userRoleRepository.find({
-				where: { user_id, status: StatusEnum.ACTIVE },
-				relations: ['role', 'user'],
-			});
+			// Buscar roles en ambas tablas
+			const [expertosRoles, administradoresRoles] = await Promise.all([
+				this.expertoRoleRepository.find({
+					where: { experto_id: user_id, status: StatusEnum.ACTIVE },
+					relations: ['role', 'experto'],
+				}),
+				this.administradorRoleRepository.find({
+					where: { administrador_id: user_id, status: StatusEnum.ACTIVE },
+					relations: ['role', 'administrador'],
+				}),
+			]);
+
+			// Combinar resultados
+			const userRoles = [
+				...expertosRoles.map(er => ({ ...er, user: er.experto, type: 'experto' })),
+				...administradoresRoles.map(ar => ({ ...ar, user: ar.administrador, type: 'administrador' })),
+			];
 
 			return {
 				message: 'Roles del usuario obtenidos correctamente',
@@ -515,13 +585,21 @@ export class AuthorizationService {
 
 	async hasPermission(checkDto: CheckPermissionDto) {
 		try {
-			// Obtener roles del usuario
-			const userRoles = await this.userRoleRepository.find({
-				where: { user_id: checkDto.user_id, status: StatusEnum.ACTIVE },
-				relations: ['role'],
-			});
+			// Obtener roles del usuario de ambas tablas
+			const [expertosRoles, administradoresRoles] = await Promise.all([
+				this.expertoRoleRepository.find({
+					where: { experto_id: checkDto.user_id, status: StatusEnum.ACTIVE },
+					relations: ['role'],
+				}),
+				this.administradorRoleRepository.find({
+					where: { administrador_id: checkDto.user_id, status: StatusEnum.ACTIVE },
+					relations: ['role'],
+				}),
+			]);
 
-			if (userRoles.length === 0) {
+			const allUserRoles = [...expertosRoles, ...administradoresRoles];
+
+			if (allUserRoles.length === 0) {
 				return {
 					message: 'Usuario sin permisos',
 					data: { hasPermission: false },
@@ -530,7 +608,7 @@ export class AuthorizationService {
 			}
 
 			// Obtener todos los permisos de los roles del usuario
-			const roleIds = userRoles.map((userRole) => userRole.role_id);
+			const roleIds = allUserRoles.map((userRole) => userRole.role_id);
 			const rolePermissions = await this.rolePermissionRepository.find({
 				where: { role_id: In(roleIds), status: StatusEnum.ACTIVE },
 				relations: ['permission'],
@@ -642,22 +720,30 @@ export class AuthorizationService {
 
 	async getUserPermissions(userId: number) {
 		try {
-			// Obtengo los roles del usuario actual
-			const userRoles = await this.userRoleRepository.find({
-				where: { user_id: userId, status: StatusEnum.ACTIVE },
-				relations: ['role'],
-			});
+			// Obtener roles del usuario de ambas tablas
+			const [expertosRoles, administradoresRoles] = await Promise.all([
+				this.expertoRoleRepository.find({
+					where: { experto_id: userId, status: StatusEnum.ACTIVE },
+					relations: ['role'],
+				}),
+				this.administradorRoleRepository.find({
+					where: { administrador_id: userId, status: StatusEnum.ACTIVE },
+					relations: ['role'],
+				}),
+			]);
 
-			if (userRoles.length === 0) {
+			const allUserRoles = [...expertosRoles, ...administradoresRoles];
+
+			if (allUserRoles.length === 0) {
 				return {
 					message: 'Usuario sin permisos',
-					data: { permissions: [] },
+					data: [],
 					status: HttpStatus.OK,
 				};
 			}
 
-			// Obtengo los permisos de los roles del usuario actual
-			const roleIds = userRoles.map((userRole) => userRole.role_id);
+			// Obtener los permisos de los roles del usuario
+			const roleIds = allUserRoles.map((userRole) => userRole.role_id);
 			const userPermissions = await this.rolePermissionRepository.find({
 				where: { role_id: In(roleIds), status: StatusEnum.ACTIVE },
 				relations: ['permission'],

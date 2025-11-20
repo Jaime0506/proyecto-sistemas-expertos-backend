@@ -2,16 +2,21 @@ import { Module } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { UsersModule } from '../users/users.module';
-import { User } from '../users/entities/user.entity';
+import { Experto } from '../users/entities/experto.entity';
+import { Administrador } from '../users/entities/administrador.entity';
+import { Cliente } from '../users/entities/cliente.entity';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { JwtModule } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthorizationModule } from '../authorization/authorization.module';
+import { JwtStrategy } from './strategy/jwt.strategy';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { RolesGuard } from './guards/roles.guard';
 
 @Module({
 	imports: [
-		TypeOrmModule.forFeature([User, RefreshToken]),
+		TypeOrmModule.forFeature([Experto, Administrador, Cliente, RefreshToken]),
 		UsersModule,
 		AuthorizationModule,
 		JwtModule.registerAsync({
@@ -26,6 +31,7 @@ import { AuthorizationModule } from '../authorization/authorization.module';
 		}),
 	],
 	controllers: [AuthController],
-	providers: [AuthService],
+	providers: [AuthService, JwtStrategy, JwtAuthGuard, RolesGuard],
+	exports: [JwtAuthGuard, RolesGuard],
 })
 export class AuthModule {}

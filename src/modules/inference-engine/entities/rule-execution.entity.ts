@@ -1,5 +1,5 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
-import { EvaluationSession } from './evaluation-session.entity';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
+import { Rule } from '../../rules/entities/rule.entity';
 
 @Entity({ name: 'rule_executions', schema: 'sys' })
 export class RuleExecution {
@@ -9,20 +9,8 @@ export class RuleExecution {
   @Column({ type: 'integer' })
   evaluation_session_id: number;
 
-  @Column({ type: 'varchar', length: 10 })
-  rule_code: string; // R001, R002, etc.
-
-  @Column({ type: 'varchar', length: 100 })
-  rule_name: string;
-
-  @Column({ type: 'varchar', length: 50 })
-  rule_category: string; // ADMISIBILIDAD, RIESGO, PRODUCTO, NORMATIVA, ESPECIAL
-
-  @Column({ type: 'jsonb' })
-  rule_conditions: any; // Condiciones evaluadas
-
-  @Column({ type: 'jsonb' })
-  rule_facts_used: any; // Facts utilizados en la evaluación
+  @Column({ type: 'integer' })
+  rule_id: number;
 
   @Column({ type: 'boolean' })
   rule_applied: boolean; // Si la regla se aplicó o no
@@ -39,13 +27,20 @@ export class RuleExecution {
   @Column({ type: 'decimal', precision: 5, scale: 2, nullable: true })
   execution_time_ms: number; // Tiempo de ejecución en milisegundos
 
-  @Column({ type: 'integer', nullable: true })
-  priority: number; // Prioridad de la regla
-
   @CreateDateColumn({ type: 'timestamp' })
   executed_at: Date;
 
-  @ManyToOne(() => EvaluationSession, { onDelete: 'CASCADE' })
+  @ManyToOne('EvaluationSession', { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'evaluation_session_id' })
-  evaluation_session: EvaluationSession;
+  evaluation_session: any;
+
+  @ManyToOne(() => Rule, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'rule_id' })
+  rule: Rule;
+
+  @OneToMany('RuleExecutionCondition', 'rule_execution', { cascade: true })
+  rule_conditions?: any[];
+
+  @OneToMany('RuleExecutionFactsUsed', 'rule_execution', { cascade: true })
+  rule_facts_used?: any[];
 }

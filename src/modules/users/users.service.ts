@@ -7,36 +7,52 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
-import { StatusEnum, User } from './entities/user.entity';
+import { StatusEnum } from './entities/user.entity';
+import { Experto } from './entities/experto.entity';
+import { Administrador } from './entities/administrador.entity';
+import { Cliente } from './entities/cliente.entity';
 import { CreateUserDto } from './dtos/create-user.dto';
 import { UpdateUserDto } from './dtos/update-user.dto';
 import { Role } from '../authorization/entities/role.entity';
-import { UserRole } from '../authorization/entities/user-role.entity';
+import { ExpertoRole } from '../authorization/entities/experto-role.entity';
+import { AdministradorRole } from '../authorization/entities/administrador-role.entity';
 import { hashPassword } from '../../utils/password.utility';
 import { CreateUserAdminDto } from './dtos/create-user-admin.dto';
-import { processTransaction } from 'src/utils/transaction';
+import { processTransaction } from '../../utils/transaction';
 
 @Injectable()
 export class UsersService {
 	constructor(
 		private readonly dataSource: DataSource,
-		@InjectRepository(User)
-		private readonly userRepository: Repository<User>,
+		@InjectRepository(Experto)
+		private readonly expertoRepository: Repository<Experto>,
+		@InjectRepository(Administrador)
+		private readonly administradorRepository: Repository<Administrador>,
+		@InjectRepository(Cliente)
+		private readonly clienteRepository: Repository<Cliente>,
 		@InjectRepository(Role)
 		private readonly roleRepository: Repository<Role>,
-		@InjectRepository(UserRole)
-		private readonly userRoleRepository: Repository<UserRole>,
+		@InjectRepository(ExpertoRole)
+		private readonly expertoRoleRepository: Repository<ExpertoRole>,
+		@InjectRepository(AdministradorRole)
+		private readonly administradorRoleRepository: Repository<AdministradorRole>,
 	) {}
 
 	async findAllUsers() {
 		try {
-			const users = await this.userRepository.find({
-				where: {
-					status: StatusEnum.ACTIVE,
-				},
-			});
+			const [expertos, administradores, clientes] = await Promise.all([
+				this.expertoRepository.find({ where: { status: StatusEnum.ACTIVE } }),
+				this.administradorRepository.find({ where: { status: StatusEnum.ACTIVE } }),
+				this.clienteRepository.find({ where: { status: StatusEnum.ACTIVE } }),
+			]);
 
-			if (users.length === 0) {
+			const allUsers = [
+				...expertos.map(u => ({ ...u, type: 'experto' })),
+				...administradores.map(u => ({ ...u, type: 'administrador' })),
+				...clientes.map(u => ({ ...u, type: 'cliente' })),
+			];
+
+			if (allUsers.length === 0) {
 				return {
 					message: 'No se encontraron usuarios',
 					data: [],
@@ -46,7 +62,7 @@ export class UsersService {
 
 			return {
 				message: 'Usuarios obtenidos correctamente',
-				data: users,
+				data: allUsers,
 				status: HttpStatus.OK,
 			};
 		} catch (error) {
@@ -57,16 +73,54 @@ export class UsersService {
 		}
 	}
 
+	async findAllClientes() {
+		try {
+			const clientes = await this.clienteRepository.find({ 
+				where: { status: StatusEnum.ACTIVE } 
+			});
+
+			if (clientes.length === 0) {
+				return {
+					message: 'No se encontraron clientes',
+					data: [],
+					status: HttpStatus.OK,
+				};
+			}
+
+			return {
+				message: 'Clientes obtenidos correctamente',
+				data: clientes,
+				status: HttpStatus.OK,
+			};
+		} catch (error) {
+			console.error(error);
+			throw new InternalServerErrorException(
+				'Error al obtener los clientes',
+			);
+		}
+	}
+
 	async findUsersWithRoles() {
 		try {
-			const users = await this.userRoleRepository.find({
-				where: { status: StatusEnum.ACTIVE },
-				relations: ['user', 'role'],
-			});
+			const [expertosRoles, administradoresRoles] = await Promise.all([
+				this.expertoRoleRepository.find({
+					where: { status: StatusEnum.ACTIVE },
+					relations: ['experto', 'role'],
+				}),
+				this.administradorRoleRepository.find({
+					where: { status: StatusEnum.ACTIVE },
+					relations: ['administrador', 'role'],
+				}),
+			]);
+
+			const usersWithRoles = [
+				...expertosRoles.map(ur => ({ ...ur, user: ur.experto, type: 'experto' })),
+				...administradoresRoles.map(ur => ({ ...ur, user: ur.administrador, type: 'administrador' })),
+			];
 
 			return {
 				message: 'Usuarios obtenidos correctamente',
-				data: users,
+				data: usersWithRoles,
 				status: HttpStatus.OK,
 			};
 		} catch (error) {
@@ -79,14 +133,23 @@ export class UsersService {
 
 	async findUserById(id: number) {
 		try {
-			const user = await this.userRepository.findOne({ where: { id } });
+			// Buscar en todas las tablas
+			const [experto, administrador, cliente] = await Promise.all([
+				this.expertoRepository.findOne({ where: { id } }),
+				this.administradorRepository.findOne({ where: { id } }),
+				this.clienteRepository.findOne({ where: { id } }),
+			]);
+
+			const user = experto || administrador || cliente;
 			if (!user) {
 				throw new NotFoundException('Usuario no encontrado');
 			}
 
+			const userType = experto ? 'experto' : administrador ? 'administrador' : 'cliente';
+
 			return {
 				message: 'Usuario obtenido correctamente',
-				data: user,
+				data: { ...user, type: userType },
 				status: HttpStatus.OK,
 			};
 		} catch (error) {
@@ -99,14 +162,29 @@ export class UsersService {
 
 	async findUserByUsername(username: string) {
 		try {
-			// Buscar por username o email
-			const user = await this.userRepository.findOne({
-				where: [
-					{ username },
-					{ email: username }
-				],
-			});
+			// Buscar por username o email en todas las tablas
+			const [experto, administrador, cliente] = await Promise.all([
+				this.expertoRepository.findOne({
+					where: [
+						{ username },
+						{ email: username }
+					],
+				}),
+				this.administradorRepository.findOne({
+					where: [
+						{ username },
+						{ email: username }
+					],
+				}),
+				this.clienteRepository.findOne({
+					where: [
+						{ username },
+						{ email: username }
+					],
+				}),
+			]);
 
+			const user = experto || administrador || cliente;
 			if (!user) {
 				return {
 					message: 'Usuario no encontrado',
@@ -115,9 +193,11 @@ export class UsersService {
 				};
 			}
 
+			const userType = experto ? 'experto' : administrador ? 'administrador' : 'cliente';
+
 			return {
 				message: 'Usuario obtenido correctamente',
-				data: user,
+				data: { ...user, type: userType },
 				status: HttpStatus.OK,
 			};
 		} catch (error) {
@@ -128,52 +208,57 @@ export class UsersService {
 		}
 	}
 
-	// Este es el crear que usaran los usuarios normales
+	// Este es el crear que usaran los usuarios normales (se crean como Cliente)
 	async createUser(createUserDto: CreateUserDto) {
 		try {
-			// Valido si existe algun dato repetido, de las unique
-			const userExists = await this.userRepository.findOne({
-				where: {
-					username: createUserDto.username,
-					email: createUserDto.email,
-				},
-			});
+			// Validar si existe algún dato repetido en todas las tablas
+			const [expertoExists, administradorExists, clienteExists] = await Promise.all([
+				this.expertoRepository.findOne({
+					where: [
+						{ username: createUserDto.username },
+						{ email: createUserDto.email }
+					],
+				}),
+				this.administradorRepository.findOne({
+					where: [
+						{ username: createUserDto.username },
+						{ email: createUserDto.email }
+					],
+				}),
+				this.clienteRepository.findOne({
+					where: [
+						{ username: createUserDto.username },
+						{ email: createUserDto.email }
+					],
+				}),
+			]);
 
-			if (userExists) {
+			if (expertoExists || administradorExists || clienteExists) {
 				throw new ConflictException('El username o email ya existe');
 			}
 
 			// Hashear la contraseña antes de guardar
 			const hashedPassword = await hashPassword(createUserDto.password);
 			
-			// Crear el objeto usuario con la contraseña hasheada
-			const userData = {
+			// Crear el cliente (los usuarios que se registran públicamente son clientes)
+			const clienteData = {
 				username: createUserDto.username,
 				email: createUserDto.email,
 				password_hash: hashedPassword,
 			};
 
-			const user = await this.userRepository.save(userData);
-
-			// Asigno el rol al usuario
-			const userRole = await this.userRoleRepository.save({
-				user_id: user.id,
-				role_id: 2,
-			});
-
-			if (!userRole) {
-				throw new NotFoundException(
-					'Error al asignar el rol al usuario',
-				);
-			}
+			const cliente = await this.clienteRepository.save(clienteData);
 
 			return {
 				message: 'Usuario creado correctamente',
-				data: user,
+				data: { ...cliente, type: 'cliente' },
 				status: HttpStatus.CREATED,
 			};
 		} catch (error) {
-			console.error(error);
+			console.error('Error en createUser:', error);
+			if (error instanceof ConflictException) {
+				throw error;
+			}
 			throw new InternalServerErrorException('Error al crear el usuario');
 		}
 	}
@@ -188,17 +273,29 @@ export class UsersService {
 					const { role_id, ...userData } = createUserDto;
 					console.log('🔧 createUserByAdmin: Extracted data:', { role_id, userData });
 
-					// Validar que no existe el usuario
-					const userExists = await queryRunner.manager
-						.getRepository(User)
-						.findOne({
-							where: {
-								username: userData.username,
-								email: userData.email,
-							},
-						});
+					// Validar que no existe el usuario en ninguna tabla
+					const [expertoExists, administradorExists, clienteExists] = await Promise.all([
+						queryRunner.manager.getRepository(Experto).findOne({
+							where: [
+								{ username: userData.username },
+								{ email: userData.email }
+							],
+						}),
+						queryRunner.manager.getRepository(Administrador).findOne({
+							where: [
+								{ username: userData.username },
+								{ email: userData.email }
+							],
+						}),
+						queryRunner.manager.getRepository(Cliente).findOne({
+							where: [
+								{ username: userData.username },
+								{ email: userData.email }
+							],
+						}),
+					]);
 
-					if (userExists) {
+					if (expertoExists || administradorExists || clienteExists) {
 						throw new ConflictException(
 							'El username o email ya existe',
 						);
@@ -224,52 +321,100 @@ export class UsersService {
 					const { password, ...userWithoutPassword } = userData;
 					console.log('🔧 createUserByAdmin: User data without password:', userWithoutPassword);
 					
-					console.log('🔧 createUserByAdmin: Saving user...');
-					const user = await queryRunner.manager
-						.getRepository(User)
-						.save({
-							...userWithoutPassword,
-							password_hash: hashedPassword,
-						});
-					console.log('🔧 createUserByAdmin: User saved successfully:', user);
+					// Determinar qué tipo de usuario crear según el rol
+					// rol 1 = admin -> Administrador
+					// rol 2 = user o rol 8 = experto -> Experto
+					let user: Experto | Administrador;
+					let userRole: ExpertoRole | AdministradorRole;
 
-					console.log('🔧 createUserByAdmin: Creating user role...');
-					const userRole = await queryRunner.manager
-						.getRepository(UserRole)
-						.save({
-							user_id: user.id,
-							role_id: role_id,
-						});
-					console.log('🔧 createUserByAdmin: User role created successfully:', userRole);
+					if (role_id === 1) {
+						// Crear Administrador
+						console.log('🔧 createUserByAdmin: Creating Administrador...');
+						user = await queryRunner.manager
+							.getRepository(Administrador)
+							.save({
+								...userWithoutPassword,
+								password_hash: hashedPassword,
+							});
+						console.log('🔧 createUserByAdmin: Administrador saved successfully:', user);
 
-					return {
-						message: 'Usuario creado correctamente',
-						data: { ...user, role_id: userRole.role_id },
-						status: HttpStatus.CREATED,
-					};
+						console.log('🔧 createUserByAdmin: Creating administrador role...');
+						userRole = await queryRunner.manager
+							.getRepository(AdministradorRole)
+							.save({
+								administrador_id: user.id,
+								role_id: role_id,
+							});
+						console.log('🔧 createUserByAdmin: Administrador role created successfully:', userRole);
+
+						return {
+							message: 'Usuario creado correctamente',
+							data: { ...user, role_id: userRole.role_id, type: 'administrador' },
+							status: HttpStatus.CREATED,
+						};
+					} else {
+						// Crear Experto (para rol 2 o 8)
+						console.log('🔧 createUserByAdmin: Creating Experto...');
+						user = await queryRunner.manager
+							.getRepository(Experto)
+							.save({
+								...userWithoutPassword,
+								password_hash: hashedPassword,
+							});
+						console.log('🔧 createUserByAdmin: Experto saved successfully:', user);
+
+						console.log('🔧 createUserByAdmin: Creating experto role...');
+						userRole = await queryRunner.manager
+							.getRepository(ExpertoRole)
+							.save({
+								experto_id: user.id,
+								role_id: role_id,
+							});
+						console.log('🔧 createUserByAdmin: Experto role created successfully:', userRole);
+
+						return {
+							message: 'Usuario creado correctamente',
+							data: { ...user, role_id: userRole.role_id, type: 'experto' },
+							status: HttpStatus.CREATED,
+						};
+					}
 				},
 			);
 		} catch (error) {
-			console.error(error);
+			console.error('Error en createUserByAdmin:', error);
+			if (error instanceof ConflictException || error instanceof NotFoundException) {
+				throw error;
+			}
 			throw new InternalServerErrorException('Error al crear el usuario');
 		}
 	}
 
 	async updateUser(updateUserDto: UpdateUserDto) {
 		try {
-			// Existe el usuario?
-			const user = await this.userRepository.findOne({
-				where: { id: updateUserDto.id },
-			});
+			// Buscar el usuario en todas las tablas
+			const [experto, administrador, cliente] = await Promise.all([
+				this.expertoRepository.findOne({ where: { id: updateUserDto.id } }),
+				this.administradorRepository.findOne({ where: { id: updateUserDto.id } }),
+				this.clienteRepository.findOne({ where: { id: updateUserDto.id } }),
+			]);
 
+			const user = experto || administrador || cliente;
 			if (!user) {
 				throw new NotFoundException('Usuario no encontrado');
 			}
 
-			const updatedUser = await this.userRepository.update(
-				updateUserDto.id,
-				updateUserDto,
-			);
+			// Actualizar según el tipo
+			let updatedUser;
+			if (experto) {
+				await this.expertoRepository.update(updateUserDto.id, updateUserDto);
+				updatedUser = await this.expertoRepository.findOne({ where: { id: updateUserDto.id } });
+			} else if (administrador) {
+				await this.administradorRepository.update(updateUserDto.id, updateUserDto);
+				updatedUser = await this.administradorRepository.findOne({ where: { id: updateUserDto.id } });
+			} else {
+				await this.clienteRepository.update(updateUserDto.id, updateUserDto);
+				updatedUser = await this.clienteRepository.findOne({ where: { id: updateUserDto.id } });
+			}
 
 			return {
 				message: 'Usuario actualizado correctamente',
@@ -278,6 +423,9 @@ export class UsersService {
 			};
 		} catch (error) {
 			console.error(error);
+			if (error instanceof NotFoundException) {
+				throw error;
+			}
 			throw new InternalServerErrorException(
 				'Error al actualizar el usuario',
 			);
@@ -286,16 +434,29 @@ export class UsersService {
 
 	async deleteUser(id: number) {
 		try {
-			// Existe el usuario?
-			const user = await this.userRepository.findOne({ where: { id } });
+			// Buscar el usuario en todas las tablas
+			const [experto, administrador, cliente] = await Promise.all([
+				this.expertoRepository.findOne({ where: { id } }),
+				this.administradorRepository.findOne({ where: { id } }),
+				this.clienteRepository.findOne({ where: { id } }),
+			]);
+
+			const user = experto || administrador || cliente;
 			if (!user) {
 				throw new NotFoundException('Usuario no encontrado');
 			}
 
+			// Desactivar según el tipo
 			user.status = StatusEnum.DESACTIVE;
 			user.deleted_at = new Date();
 
-			await this.userRepository.save(user);
+			if (experto) {
+				await this.expertoRepository.save(user);
+			} else if (administrador) {
+				await this.administradorRepository.save(user);
+			} else {
+				await this.clienteRepository.save(user);
+			}
 
 			return {
 				message: 'Usuario eliminado correctamente',
@@ -303,6 +464,9 @@ export class UsersService {
 			};
 		} catch (error) {
 			console.error(error);
+			if (error instanceof NotFoundException) {
+				throw error;
+			}
 			throw new InternalServerErrorException(
 				'Error al eliminar el usuario',
 			);

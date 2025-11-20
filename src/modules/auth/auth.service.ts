@@ -14,10 +14,14 @@ import { RefreshToken } from './entities/refresh-token.entity';
 import { UsersService } from '../users/users.service';
 
 import { randomBytes, createHash } from 'crypto';
-import { StatusEnum, User } from '../users/entities/user.entity';
-import { comparePassword } from 'src/utils/password.utility';
-import { processTransaction } from 'src/utils/transaction';
+import { StatusEnum } from '../users/entities/user.entity';
+import { Experto } from '../users/entities/experto.entity';
+import { Administrador } from '../users/entities/administrador.entity';
+import { Cliente } from '../users/entities/cliente.entity';
+import { comparePassword } from '../../utils/password.utility';
+import { processTransaction } from '../../utils/transaction';
 import { CreateUserDto } from '../users/dtos/create-user.dto';
+import { UserType } from './entities/refresh-token.entity';
 
 @Injectable()
 export class AuthService {
@@ -83,7 +87,10 @@ export class AuthService {
 		console.log('🔍 Password match:', { match });
 		
 		if (!match) return null;
-		return userData;
+		
+		// Asegurar que el tipo esté incluido
+		const userType = (userData as any).type;
+		return { ...userData, type: userType };
 	}
 
 	private hashRefreshToken(token: string) {
@@ -97,12 +104,18 @@ export class AuthService {
 		return randomBytes(64).toString('hex');
 	}
 
-	async login(user: User) {
-		// user ya validado (puede ser objeto User)
+	async login(user: Experto | Administrador | Cliente & { type?: string }) {
+		// Determinar el tipo de usuario
+		const userType = (user as any).type || 
+			(user instanceof Experto ? UserType.EXPERTO :
+			 user instanceof Administrador ? UserType.ADMINISTRADOR :
+			 UserType.CLIENTE);
+
 		const payload = {
 			sub: user.id,
 			username: user.username,
 			email: user.email,
+			userType: userType,
 		};
 		const accessToken = await this.jwtService.signAsync(payload);
 
@@ -115,6 +128,7 @@ export class AuthService {
 
 		const refresh = this.refreshRepo.create({
 			userId: user.id,
+			userType: userType,
 			tokenHash,
 			expiresAt,
 		});
@@ -123,7 +137,7 @@ export class AuthService {
 		return {
 			message: 'Login exitoso',
 			data: {
-				user,
+				user: { ...user, type: userType },
 				accessToken,
 				refreshToken: refreshPlain,
 				expiresIn:
@@ -183,6 +197,7 @@ export class AuthService {
 					RefreshToken,
 					{
 						userId: existing.userId,
+						userType: existing.userType,
 						tokenHash: newHash,
 						expiresAt: newExpiresAt,
 					},
@@ -215,10 +230,12 @@ export class AuthService {
 			);
 		}
 
+		const userType = (user as any).type || existing.userType;
 		const payload = {
 			sub: user.id,
 			username: user.username,
 			email: user.email,
+			userType: userType,
 		};
 		const accessToken = await this.jwtService.signAsync(payload);
 

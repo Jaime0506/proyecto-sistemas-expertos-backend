@@ -3,22 +3,24 @@ import {
 	Entity,
 	PrimaryGeneratedColumn,
 	Column,
-	ManyToOne,
-	JoinColumn,
 } from 'typeorm';
-import { User } from '../../../modules/users/entities/user.entity';
+
+export enum UserType {
+	EXPERTO = 'experto',
+	ADMINISTRADOR = 'administrador',
+	CLIENTE = 'cliente',
+}
 
 @Entity({ schema: 'sys', name: 'refresh_tokens' })
 export class RefreshToken {
 	@PrimaryGeneratedColumn()
 	id: number;
 
-	@Column({ name: 'user_id', type: 'int' })
-	userId: number;
+	@Column({ name: 'user_type', type: 'enum', enum: UserType, nullable: false })
+	userType: UserType;
 
-	@ManyToOne(() => User, { onDelete: 'CASCADE' })
-	@JoinColumn({ name: 'user_id' })
-	user: User;
+	@Column({ name: 'user_id', type: 'int', nullable: false })
+	userId: number;
 
 	@Column({ name: 'token_hash', type: 'varchar', length: 255 })
 	tokenHash: string;

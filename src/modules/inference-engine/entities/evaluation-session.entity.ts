@@ -1,5 +1,5 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
-import { User } from '../../users/entities/user.entity';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn, OneToOne, OneToMany } from 'typeorm';
+import { Cliente } from '../../users/entities/cliente.entity';
 
 @Entity({ name: 'evaluation_sessions', schema: 'sys' })
 export class EvaluationSession {
@@ -10,29 +10,17 @@ export class EvaluationSession {
   session_id: string;
 
   @Column({ type: 'integer', nullable: true })
-  user_id: number;
+  cliente_id: number;
 
-  @ManyToOne(() => User, { nullable: true })
-  @JoinColumn({ name: 'user_id' })
-  user: User;
-
-  @Column({ type: 'jsonb' })
-  input_data: any; // Datos de entrada del usuario (respuestas del survey)
-
-  @Column({ type: 'jsonb', nullable: true })
-  facts_detected: any; // Facts detectados basados en input_data
-
-  @Column({ type: 'jsonb', nullable: true })
-  evaluation_result: any; // Resultado completo de la evaluación
+  @ManyToOne(() => Cliente, { nullable: true })
+  @JoinColumn({ name: 'cliente_id' })
+  cliente: Cliente;
 
   @Column({ type: 'varchar', length: 50, nullable: true })
   final_decision: string; // APROBADO, RECHAZADO, CONDICIONADO, PENDIENTE
 
   @Column({ type: 'varchar', length: 50, nullable: true })
   risk_profile: string; // BAJO, MEDIO, ALTO
-
-  @Column({ type: 'jsonb', nullable: true })
-  recommended_products: any; // Productos recomendados
 
   @Column({ type: 'text', nullable: true })
   explanation: string; // Explicación de la decisión
@@ -42,6 +30,18 @@ export class EvaluationSession {
 
   @Column({ type: 'varchar', length: 20, default: 'PENDING' })
   status: string; // PENDING, COMPLETED, FAILED
+
+  @OneToOne('EvaluationInputData', 'evaluation_session', { cascade: true })
+  input_data?: any;
+
+  @OneToMany('EvaluationFactsDetected', 'evaluation_session', { cascade: true })
+  facts_detected?: any[];
+
+  @OneToOne('EvaluationResults', 'evaluation_session', { cascade: true })
+  evaluation_result?: any;
+
+  @OneToMany('ProductRecommendation', 'evaluation_session', { cascade: true })
+  recommended_products?: any[];
 
   @CreateDateColumn({ type: 'timestamp' })
   created_at: Date;

@@ -5,19 +5,23 @@ import { AuthorizationController } from './authorization.controller';
 import { RolesController } from './controllers/roles.controller';
 import { PermissionsController } from './controllers/permissions.controller';
 import { AssignmentsController } from './controllers/assignments.controller';
-import { User } from '../users/entities/user.entity';
+import { Experto } from '../users/entities/experto.entity';
+import { Administrador } from '../users/entities/administrador.entity';
 import { Role } from './entities/role.entity';
 import { Permission } from './entities/permission.entity';
-import { UserRole } from './entities/user-role.entity';
+import { ExpertoRole } from './entities/experto-role.entity';
+import { AdministradorRole } from './entities/administrador-role.entity';
 import { RolePermission } from './entities/role-permission.entity';
 
 @Module({
 	imports: [
 		TypeOrmModule.forFeature([
-			User,
+			Experto,
+			Administrador,
 			Role,
 			Permission,
-			UserRole,
+			ExpertoRole,
+			AdministradorRole,
 			RolePermission,
 		]),
 	],
